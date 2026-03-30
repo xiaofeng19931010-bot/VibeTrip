@@ -7,6 +7,7 @@
 ## 1. 架构与依赖底线 (Architecture & Dependencies)
 
 - **语言单一化**：绝对禁止引入 TypeScript / Node.js 之外的后端语言（如 Python、Ruby、Go）。所有代码必须是 TypeScript。
+- **动态 GUI (Generative UI) 优先**：项目为面向 Agent 的原生项目，**绝对禁止编写传统的固定路由页面或 CRUD 表单（如填写目的地、选择日期的固定表单页面）**。Web 端必须作为薄壳，基于用户的自然语言交互以及 MCP Tool 返回的结果（流式 JSON），使用 Vercel AI SDK 动态构建/渲染交互组件。
 - **BaaS 优先**：禁止在本地或云端手写 `docker-compose.yml` 部署数据库、Redis、MQ 等基础设施。
   - **数据库/鉴权/存储**：只能使用 Supabase API，禁止直连原生 Postgres 协议绕过 RLS（Row Level Security）。
   - **异步队列**：只能使用 Inngest 或 Trigger.dev，禁止引入 BullMQ、Celery 等需要 Redis 的传统队列。
@@ -82,6 +83,7 @@
 *注：将此段落喂给 Cursor/Trae 等 AI 助手*
 
 1. **先看 Schema，再写逻辑**：实现任何功能前，先去 `packages/core/schemas` 查找或定义 Zod schema，再开始写实现代码。
-2. **避免过度抽象**：不需要写复杂的面向对象继承（如 Abstract Base Class），多用纯函数（Pure Functions）和组合模式，保持代码极简。
-3. **保持状态机清晰**：在修改 Trip 或 Itinerary 状态时，不要散落式地 update，必须调用 `packages/core` 中统一的状态流转函数（State Machine）。
-4. **拒绝“假设性修复”**：如果发现类型不匹配或逻辑缺失，**停下来询问或直接去修复根源**，不要在当前文件里写临时补丁（Workaround）。
+2. **避免传统 UI 思维**：在前端开发中，**禁止创建固定的表单组件**。所有业务卡片（如：行程预览、选项确认）必须作为 Generative UI 的 `toolInvocation` 渲染产物。
+3. **避免过度抽象**：不需要写复杂的面向对象继承（如 Abstract Base Class），多用纯函数（Pure Functions）和组合模式，保持代码极简。
+4. **保持状态机清晰**：在修改 Trip 或 Itinerary 状态时，不要散落式地 update，必须调用 `packages/core` 中统一的状态流转函数（State Machine）。
+5. **拒绝“假设性修复”**：如果发现类型不匹配或逻辑缺失，**停下来询问或直接去修复根源**，不要在当前文件里写临时补丁（Workaround）。

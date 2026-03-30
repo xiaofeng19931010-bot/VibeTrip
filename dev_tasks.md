@@ -16,7 +16,7 @@
 - `packages/core/`：核心业务逻辑、Supabase 客户端封装、AI 编排（单人维护的单一真源）。
 - `apps/mcp-server/`：TypeScript MCP Server（SSE/HTTP 部署在 Vercel/Edge，stdio 供本地使用）。
 - `apps/cli/`：TypeScript CLI（引用 `core` 或调用远端 MCP）。
-- `apps/web/`：TypeScript Web（Next.js，直接与 Supabase 和 `mcp-server` 交互）。
+- `apps/web/`：TypeScript Web（基于 Next.js 与 Vercel AI SDK 的 Generative UI 对话式基座，无传统固化表单）。
 
 ---
 
@@ -37,14 +37,14 @@
 |10|D2.0|Security|最小安全骨架（鉴权/限流/错误码）|可安全联调、可控成本|
 |11|D2.2|MCP|实现最小 8 个 MCP Tools（直调 Core）|工具可用、复用 core|
 |12|D2.3|CLI|实现 CLI 命令（复用 MCP）|`vibetrip plan/capture/memory/share`|
-|12.2|D2.4|Web|实现最小 Web 动态 GUI (A2UI)|流式渲染规划结果与对话界面|
+|12.2|D2.4|Web|实现 Agent 原生动态 GUI (Generative UI)|流式渲染工具结果，无固定表单|
 |12.5|D2.5|Web/MCP|氛围感适配器：目的地/角色关联主题色与BGM|UI 主题配置与音乐推荐接口|
 |13|D3.1|Capture|自动记录：采集策略与数据来源（MVP）|start/stop/status + 策略配置|
 |14|D3.2|Capture|媒体采集：照片/语音/笔记 ingest 流程|素材入库、引用可追溯|
 |14.5|D3.3|Capture|停留点识别算法：从坐标到行程摘要的聚合|基于时间与距离的聚类算法|
 |15|D4.1|Memory|旅行记忆 MVP：图文手账/长图生成|`generate_memory` 可产出文件|
 |16|D4.2|Share|一键分享：渠道模板 + 文案生成 + 素材打包|`generate_share` 可交付内容|
-|16.5|D4.3|Web|角色化 UI 响应式开发：长辈大字号/情侣浪漫主题|不同角色下 UI 动态切换|
+|16.5|D4.3|Web|动态 GUI 角色化响应开发：长辈大字号/情侣浪漫主题|不同角色下动态渲染特定组件|
 |17|D5.1|Security|对外开放增强：审计/权限边界/灰度|Key 管理、审计追溯、灰度策略|
 |18|D5.2|Quality|端到端联调测试（CLI→Core→Supabase）|E2E 测试通过、覆盖核心路径|
 |19|D6.1|Docs|开发者文档：MCP 接入、CLI 用法、合同说明|可复制粘贴对接|
@@ -89,6 +89,7 @@
     - **BaaS 依赖**：全盘使用 Supabase (DB/Auth/Storage)。
     - **异步与队列**：采用 Serverless 方案（如 Inngest/Trigger.dev），不维护 Redis。
     - **BYOK (Bring Your Own Key) 策略**：明确外部 LLM 秘钥的流转边界，仅允许在请求生命周期内驻留内存，或通过端到端加密/KMS 存储，保障开发者安全接入自由的 LLM。
+    - **动态 GUI (Generative UI) 优先**：放弃所有传统的 CRUD 固化表单，Web 端只提供对话入口，基于 LLM 的 Tool Calls (MCP) 结果流式动态渲染组件。
 - 完成标准
   - 架构决策文档明确并指导后续开发，消除运维与安全焦虑。
 
@@ -192,14 +193,14 @@
   - CLI 默认走 stdio MCP（本地），可切换远程 MCP 地址。
   - CLI 支持直接通过 `--api-key` 和 `--model` 传入用户自定义 LLM 凭证。
 
-### D2.4 Web：实现最小 Web 动态 GUI (A2UI)
+### D2.4 Web：实现 Agent 原生动态 GUI (Generative UI)
 
 - 任务内容
-  - 基于 Next.js 与 Vercel AI SDK 实现对话式 UI。
-  - 实现流式渲染（Streaming UI），在 LLM 规划行程时，动态展示规划过程与卡片。
-  - 支持“一句话规划”的 Web 端输入，并优雅降级处理澄清问题（Clarifying Questions）。
+  - **摒弃传统路由与固定表单**：基于 Next.js 与 Vercel AI SDK 实现对话式主入口。
+  - 实现基于工具调用结果的流式渲染（Generative UI）：当 LLM 调用 `plan_trip` 或 `revise_itinerary` 时，前端根据返回的 JSON 数据流动态生成并渲染行程卡片、澄清选项或地图组件。
+  - 支持“一句话规划”的自然语言输入，并优雅降级处理澄清问题（Clarifying Questions）。
 - 完成标准
-  - 用户可在浏览器中输入自然语言，实时看到行程卡片的动态生成。
+  - 界面没有固定的配置表单，用户通过对话和点击动态生成的卡片选项（如选择目的地、确认预算）来推进流程。
 
 ### D2.5 Web/MCP：氛围感适配器
 
@@ -258,13 +259,13 @@
 - 完成标准
   - `generate_share` 返回可直接复制发布的内容包。
 
-### D4.3 Web：角色化 UI 响应式开发
+### D4.3 Web：动态 GUI 角色化响应开发
 
 - 任务内容
-  - 实现基于角色偏好的动态 UI：如“带父母”模式的超大字号和高对比度；“情侣”模式的浪漫色调。
-  - 将 D2.4 的氛围感主题色和 BGM 挂载到前端页面。
+  - 实现基于角色偏好的动态组件（Generative UI 组件变体）：如“带父母”模式渲染大字号、高对比度的行程卡片；“情侣”模式渲染浪漫色调组件。
+  - 将 D2.5 的氛围感主题色和 BGM 挂载到动态渲染的上下文中。
 - 完成标准
-  - Web 端在切换角色时，界面视觉与交互排版发生明显针对性改变。
+  - 动态 GUI 在解析到不同角色标识时，渲染出视觉与交互排版发生明显针对性改变的组件。
 
 ### D5.1 Security：对外开放增强（审计/权限边界/灰度）
 

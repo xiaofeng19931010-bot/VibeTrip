@@ -12,7 +12,10 @@
     "clean": "rm -rf .next"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.143",
+    "@ai-sdk/svelte": "^4.0.141",
     "@vibetrip/core": "workspace:*",
+    "ai": "^6.0.141",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
