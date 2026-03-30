@@ -1,9 +1,5 @@
 {
-  "root": true,
-  "projects": [
-    {
-      "path": "apps/web",
-      "target": "production"
-    }
-  ]
+  "buildCommand": "pnpm --filter @vibetrip/web build",
+  "outputDirectory": "apps/web/.next",
+  "installCommand": "pnpm install"
 }
