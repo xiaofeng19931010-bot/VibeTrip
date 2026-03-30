@@ -1,0 +1,27 @@
+{
+  "name": "@vibetrip/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "vibetrip": "./bin/vibetrip.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@vibetrip/core": "workspace:*",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}
