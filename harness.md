@@ -78,7 +78,123 @@
    - **错误场景**：TypeScript 接口定义为可选的 `number | undefined`，但传递给 Supabase/Zod 的值是 `null`，导致类型校验报错 `Expected number, received null`。
    - **约束**：在 Zod schema 中，如果数据库允许 NULL，必须显式声明 `.nullable().optional()`，在代码传参时要统一处理 `?? null` 或 `?? undefined` 的转换。
 
-## 6. AI 辅助编程法则 (AI Coding Rules)
+## 6. 动态 UI 生成约束 (Dynamic UI Generation Rules)
+
+*注：本节为 VibeTrip 的 Generative UI 提供了具体的设计系统约束，必须严格遵循*
+
+### 6.1 设计系统层级 (Design System Hierarchy)
+
+每个角色（Role）必须拥有完整的设计系统配置，包含以下层级：
+
+```typescript
+interface VibeConfig {
+  theme: {
+    primaryColor: string;      // 主色调
+    secondaryColor: string;    // 辅助色
+    backgroundColor: string;    // 背景色
+    textColor: string;         // 文字色
+    accentColor: string;       // 强调色
+    cardBg: string;            // 卡片背景（支持半透明）
+    gradient: string;          // 渐变背景
+    gradientStart: string;    // 渐变起点色
+    gradientEnd: string;      // 渐变终点色
+    fontDisplay: string;      // 展示字体（标题用）
+    fontBody: string;          // 正文字体
+    borderRadius: string;      // 圆角大小
+    shadow: string;            // 默认阴影
+    shadowHover: string;       // 悬停阴影
+    fontSize: 'small' | 'medium' | 'large' | 'xlarge';
+    animationDuration: string;  // 动画时长
+    blurIntensity: string;     // 模糊强度
+  };
+  stickers: string[];          // 角色贴纸列表
+  stamps: string[];           // 角色印章列表
+  decoration: {
+    pattern: 'dots' | 'lines' | 'waves' | 'grid' | 'none';
+    patternColor: string;
+    patternOpacity: number;
+    stamp: string;
+    badge: string;
+  };
+  typography: {
+    displaySize: string;
+    headingSize: string;
+    bodySize: string;
+    captionSize: string;
+    lineHeight: string;
+    letterSpacing: string;
+  };
+  spacing: {
+    cardPadding: string;
+    sectionGap: string;
+    itemGap: string;
+  };
+  effects: {
+    glassmorphism: boolean;
+    backdropBlur: string;
+    borderStyle: 'solid' | 'dashed' | 'dotted';
+    borderWidth: string;
+    highlightColor: string;
+  };
+}
+```
+
+### 6.2 角色设计风格约束 (Role Design Style Constraints)
+
+| 角色 | 设计风格 | 字体 | 圆角 | 特效 | 图案 |
+|------|---------|------|------|------|------|
+| parents (带父母) | 优雅养生 | Noto Serif SC | 20px | Glassmorphism | waves |
+| family (亲子) | 活泼欢乐 | ZCOOL KuaiLe | 24px | 无 | dots |
+| couple (情侣) | 浪漫温馨 | Ma Shan Zheng | 28px | Glassmorphism | waves |
+| friends (闺蜜/特种兵) | 活力四射 | Bangers | 16px | Glassmorphism | lines |
+| soldier (特种兵) | 极简高效 | JetBrains Mono | 8px | 无 | grid |
+
+### 6.3 组件渲染约束 (Component Rendering Rules)
+
+1. **禁止硬编码样式**：所有组件样式必须从 `VibeConfig` 动态读取，禁止在组件内写死颜色/字体/间距值。
+
+2. **动态样式注入**：通过 `generateCSSVariables(role)` 和 `generateDynamicStyles(role)` 动态生成 CSS 变量和样式规则。
+
+3. **Sticker 随机性**：每个角色配置 6-8 个 stickers，每次渲染时随机选择一个（使用 `getRandomSticker(role)`）。
+
+4. **Stamp 多样性**：每个角色配置 3 个 stamps，通过 `getRandomStamp(role)` 随机选择。
+
+5. **动画与过渡**：
+   - 每个角色必须有 `animationDuration` 配置
+   - 卡片必须有 hover 效果（`transform: translateY(-2px)` + `shadowHover`）
+   - 加载指示器使用脉冲动画（`vibe-pulse`）
+
+### 6.4 装饰元素约束 (Decoration Element Rules)
+
+1. **Pattern 图案**：
+   - `dots`: 圆点图案（`radial-gradient`）
+   - `lines`: 对角线图案（`repeating-linear-gradient 45deg`）
+   - `waves`: 波浪图案（`repeating-linear-gradient -45deg`）
+   - `grid`: 网格图案（`linear-gradient` 双向）
+   - `none`: 无图案
+
+2. **印章 (Stamp)**：绝对定位在卡片右上角，`rotate(12deg)` 旋转，带阴影。
+
+3. **徽章 (Badge)**：渐变背景，白色文字，圆角胶囊形状。
+
+### 6.5 CSS 变量命名规范 (CSS Variable Naming Convention)
+
+所有动态 CSS 变量必须以 `--vibe-` 前缀开头：
+
+```
+--vibe-primary, --vibe-secondary, --vibe-bg, --vibe-text, --vibe-accent,
+--vibe-card-bg, --vibe-gradient, --vibe-font-display, --vibe-font-body,
+--vibe-radius, --vibe-shadow, --vibe-shadow-hover, --vibe-animation,
+--vibe-blur, --vibe-pattern, --vibe-pattern-color, --vibe-pattern-opacity,
+--vibe-stamp, --vibe-badge, --vibe-display-size, --vibe-heading-size,
+--vibe-body-size, --vibe-caption-size, --vibe-line-height, --vibe-letter-spacing,
+--vibe-card-padding, --vibe-section-gap, --vibe-item-gap, --vibe-glass,
+--vibe-backdrop-blur, --vibe-border-style, --vibe-border-width, --vibe-highlight
+```
+
+---
+
+## 7. AI 辅助编程法则 (AI Coding Rules)
 
 *注：将此段落喂给 Cursor/Trae 等 AI 助手*
 
