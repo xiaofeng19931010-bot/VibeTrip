@@ -37,7 +37,8 @@
 |10|D2.0|Security|最小安全骨架（鉴权/限流/错误码）|可安全联调、可控成本|
 |11|D2.2|MCP|实现最小 8 个 MCP Tools（直调 Core）|工具可用、复用 core|
 |12|D2.3|CLI|实现 CLI 命令（复用 MCP）|`vibetrip plan/capture/memory/share`|
-|12.5|D2.4|Web/MCP|氛围感适配器：目的地/角色关联主题色与BGM|UI 主题配置与音乐推荐接口|
+|12.2|D2.4|Web|实现最小 Web 动态 GUI (A2UI)|流式渲染规划结果与对话界面|
+|12.5|D2.5|Web/MCP|氛围感适配器：目的地/角色关联主题色与BGM|UI 主题配置与音乐推荐接口|
 |13|D3.1|Capture|自动记录：采集策略与数据来源（MVP）|start/stop/status + 策略配置|
 |14|D3.2|Capture|媒体采集：照片/语音/笔记 ingest 流程|素材入库、引用可追溯|
 |14.5|D3.3|Capture|停留点识别算法：从坐标到行程摘要的聚合|基于时间与距离的聚类算法|
@@ -191,7 +192,16 @@
   - CLI 默认走 stdio MCP（本地），可切换远程 MCP 地址。
   - CLI 支持直接通过 `--api-key` 和 `--model` 传入用户自定义 LLM 凭证。
 
-### D2.4 Web/MCP：氛围感适配器
+### D2.4 Web：实现最小 Web 动态 GUI (A2UI)
+
+- 任务内容
+  - 基于 Next.js 与 Vercel AI SDK 实现对话式 UI。
+  - 实现流式渲染（Streaming UI），在 LLM 规划行程时，动态展示规划过程与卡片。
+  - 支持“一句话规划”的 Web 端输入，并优雅降级处理澄清问题（Clarifying Questions）。
+- 完成标准
+  - 用户可在浏览器中输入自然语言，实时看到行程卡片的动态生成。
+
+### D2.5 Web/MCP：氛围感适配器
 
 - 任务内容
   - 根据目的地和所选角色，计算并返回推荐的 UI 主题色。
