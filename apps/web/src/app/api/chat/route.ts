@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseClient } from '@vibetrip/core';
 import { PlanningService } from '@vibetrip/core';
 import type { TripPlan, ClarifyingQuestion } from '@/components/types';
 

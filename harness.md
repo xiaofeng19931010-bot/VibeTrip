@@ -78,6 +78,10 @@
    - **错误场景**：TypeScript 接口定义为可选的 `number | undefined`，但传递给 Supabase/Zod 的值是 `null`，导致类型校验报错 `Expected number, received null`。
    - **约束**：在 Zod schema 中，如果数据库允许 NULL，必须显式声明 `.nullable().optional()`，在代码传参时要统一处理 `?? null` 或 `?? undefined` 的转换。
 
+6. **Monorepo Vercel 部署配置冲突 (Next.js 14+ 陷阱)**
+   - **错误场景**：在 pnpm workspace monorepo 中，为了部署 `apps/web` (Next.js 14 App Router) 而在根目录添加 `vercel.json` 使用 `builds` 配置，导致部署成功但访问报 404 `NOT_FOUND`，且提示 `Due to builds existing in your configuration file, the Build and Development Settings defined in your Project Settings will not apply`。
+   - **约束**：对于 Next.js 14+ 的 Monorepo 项目，**绝对禁止**在项目根目录使用包含 `builds` 字段的 `vercel.json` 进行传统部署。必须直接在 Vercel 控制台（或通过 API/CLI）将项目的 **Root Directory** 设置为子应用目录（如 `apps/web`），由 Vercel 自动推断并执行 Monorepo 根目录的依赖安装与子目录构建。
+
 ## 6. 动态 UI 生成约束 (Dynamic UI Generation Rules)
 
 *注：本节为 VibeTrip 的 Generative UI 提供了具体的设计系统约束，必须严格遵循*
