@@ -53,6 +53,30 @@
 - **本地零配置启动**：
   - 新人（或换电脑后的你）拉下代码后，执行 `pnpm install && pnpm dev` 必须能直接跑起全套服务（结合 Supabase local），禁止需要复杂的手动环境变量配置。
 
+## 7. 实战错误总结与避坑指南 (Lessons Learned)
+
+在项目的实际开发中，我们遇到并修复了以下核心错误，这些教训必须作为未来开发的硬性约束：
+
+1. **数据库 Schema 与 Zod 验证不匹配**
+   - **错误场景**：数据库使用 `DATE` 类型（如 `2026-03-30`），而 Zod schema 使用了 `.datetime()` 验证，导致数据保存时被 Zod 拦截报错。
+   - **约束**：Zod schema 必须与数据库实际类型完全一致。对于 Postgres 的 `DATE` 类型，Zod 应使用简单的 `.string()` 或自定义的日期格式验证，而非强求 ISO datetime。
+
+2. **外键关联与列缺失 (Schema Cache 踩坑)**
+   - **错误场景**：在 Supabase 中通过 SQL 修改表结构（如给 `itinerary_items` 添加 `day_number` 列）后，应用立即报错 `Could not find the 'day_number' column`。
+   - **约束**：Supabase 的 PostgREST 存在 schema 缓存（通常需要 5-10 分钟自动刷新）。在修改表结构后，如果通过 API 访问报错，应在 Supabase Dashboard 强制刷新缓存，或等待缓存过期。
+
+3. **LLM 输出格式的不确定性 (Markdown 陷阱)**
+   - **错误场景**：要求 LLM 输出 JSON，但 LLM 实际返回了带有 Markdown 代码块包裹的格式（如 \`\`\`json\n{...}\n\`\`\`），导致 `JSON.parse()` 崩溃。
+   - **约束**：所有处理 LLM 结构化输出的代码，必须包含预处理逻辑，能够健壮地剥离 Markdown 代码块（正则匹配）并处理两端的空白字符，绝不能直接信任 `JSON.parse`。
+
+4. **RLS 策略阻塞数据写入**
+   - **错误场景**：在 MVP 测试阶段，使用 `anon_key` 写入数据时，因触发了未正确配置或默认封闭的 RLS 策略导致 `new row violates row-level security policy`。
+   - **约束**：本地开发或 MVP 测试阶段，可以通过禁用 RLS 快速验证核心业务链路。但在正式上线前，必须设计完备的 RLS 策略，确保每个用户只能操作 `auth.uid() = user_id` 的数据。
+
+5. **未正确处理空值 (Null vs Undefined)**
+   - **错误场景**：TypeScript 接口定义为可选的 `number | undefined`，但传递给 Supabase/Zod 的值是 `null`，导致类型校验报错 `Expected number, received null`。
+   - **约束**：在 Zod schema 中，如果数据库允许 NULL，必须显式声明 `.nullable().optional()`，在代码传参时要统一处理 `?? null` 或 `?? undefined` 的转换。
+
 ## 6. AI 辅助编程法则 (AI Coding Rules)
 
 *注：将此段落喂给 Cursor/Trae 等 AI 助手*
