@@ -16,7 +16,7 @@ interface TripCardProps {
   onModify?: (field: string, value: string) => void;
 }
 
-export function TripCard({ plan, onSelectOption, onConfirm, onModify }: TripCardProps) {
+export function TripCard({ plan, onConfirm, onModify }: TripCardProps) {
   const vibe = getVibeConfig(plan.role);
   const fontSize = getFontSizeClass(plan.role);
   const stamp = getRandomStamp(plan.role);
