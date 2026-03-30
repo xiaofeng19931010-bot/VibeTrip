@@ -92,41 +92,113 @@
 
 ```typescript
 interface VibeConfig {
+  role: string;
   theme: {
-    primaryColor: string;      // 主色调
-    secondaryColor: string;    // 辅助色
-    backgroundColor: string;    // 背景色
-    textColor: string;         // 文字色
-    accentColor: string;       // 强调色
-    cardBg: string;            // 卡片背景（支持半透明）
-    gradient: string;          // 渐变背景
-    gradientStart: string;    // 渐变起点色
-    gradientEnd: string;      // 渐变终点色
-    fontDisplay: string;      // 展示字体（标题用）
+    primaryColor: string;      // 主色调 (HEX)
+    secondaryColor: string;    // 辅助色 (HEX)
+    backgroundColor: string;    // 背景色 (HEX)
+    textColor: string;         // 文字色 (HEX)
+    accentColor: string;       // 强调色 (HEX)
+    cardBg: string;            // 卡片背景 (支持 rgba 半透明)
+    gradientStart: string;    // 渐变起点色 (HEX)
+    gradientEnd: string;       // 渐变终点色 (HEX)
+    fontDisplay: string;       // 展示字体（标题用）
     fontBody: string;          // 正文字体
-    borderRadius: string;      // 圆角大小
-    shadow: string;            // 默认阴影
-    shadowHover: string;       // 悬停阴影
-    fontSize: 'small' | 'medium' | 'large' | 'xlarge';
-    animationDuration: string;  // 动画时长
-    blurIntensity: string;     // 模糊强度
+    borderRadius: string;       // Tailwind 圆角类名 (如 'rounded-2xl')
+    shadow: string;           // Tailwind 阴影类名 (如 'shadow-sm')
+    shadowHover: string;       // Tailwind 悬停阴影 (如 'hover:shadow-lg')
+    fontSize: 'sm' | 'base' | 'lg' | 'xl';  // Tailwind 字号
+    animationDuration: string; // Tailwind 动画时长 (如 'duration-300')
   };
-  stickers: string[];          // 角色贴纸列表
-  stamps: string[];           // 角色印章列表
+  stickers: string[];           // 角色贴纸列表 (6-8个 emoji)
+  stamps: string[];            // 角色印章列表 (3个)
   decoration: {
     pattern: 'dots' | 'lines' | 'waves' | 'grid' | 'none';
-    patternColor: string;
-    patternOpacity: number;
-    stamp: string;
-    badge: string;
+    patternColor: string;      // 图案颜色 (HEX)
+    patternOpacity: number;    // 图案透明度 (0-1)
+    badge: string;            // 徽章文字
   };
   typography: {
-    displaySize: string;
-    headingSize: string;
-    bodySize: string;
-    captionSize: string;
-    lineHeight: string;
-    letterSpacing: string;
+    displaySize: string;      // Tailwind 展示字号 (如 'text-3xl')
+    headingSize: string;       // Tailwind 标题字号 (如 'text-xl')
+    bodySize: string;          // Tailwind 正文字号 (如 'text-base')
+    captionSize: string;       // Tailwind  caption 字号 (如 'text-sm')
+    lineHeight: string;        // Tailwind 行高 (如 'leading-relaxed')
+  };
+  spacing: {
+    cardPadding: string;       // Tailwind 内边距 (如 'p-6')
+    sectionGap: string;        // Tailwind 段落间距 (如 'gap-6')
+    itemGap: string;           // Tailwind 元素间距 (如 'gap-3')
+  };
+  effects: {
+    glassmorphism: boolean;    // 是否启用玻璃拟态
+    backdropBlur: string;      // Tailwind 模糊类名 (如 'backdrop-blur-md')
+    borderStyle: string;       // 边框样式 (solid/dashed/dotted)
+    borderWidth: string;       // Tailwind 边框宽度 (如 'border')
+    highlightColor: string;    // 高亮背景色 Tailwind 类名
+  };
+}
+```
+
+### 6.2 Tailwind CSS 现代简约扁平风格约束
+
+**设计原则**：现代简约扁平风 (Modern Flat Design)
+
+1. **色彩系统**：
+   - 主色调使用饱和度适中的柔和色系
+   - 渐变背景使用 `bg-gradient-to-br` + 角色主色/辅助色
+   - 玻璃拟态：`bg-white/80 backdrop-blur-{md|lg} border border-white/20`
+   - 文字颜色层级：主色 → 辅助色 → 灰色
+
+2. **圆角系统**：
+   - 卡片：`rounded-2xl` 或 `rounded-3xl`
+   - 按钮：`rounded-xl` 或 `rounded-full`
+   - 小元素：`rounded-lg`
+   - 胶囊：`rounded-full`
+
+3. **阴影系统**：
+   - 轻微阴影：`shadow-sm`（默认状态）
+   - 中等阴影：`shadow-md`（卡片）
+   - 悬停阴影：`shadow-lg` 或 `shadow-xl`
+   - 扁平按钮：无阴影
+
+4. **间距系统**：
+   - 卡片内边距：`p-4` ~ `p-6`
+   - 元素间距：`gap-2` ~ `gap-4`
+   - 区块间距：`gap-4` ~ `gap-6`
+
+5. **动效约束**：
+   - 过渡时长：`duration-150` ~ `duration-300`
+   - 悬停效果：`hover:-translate-y-0.5` + `hover:shadow-lg`
+   - 脉冲动画：`animate-pulse`
+   - 浮动动画：`animate-vibe-float`
+
+6. **字体层级**：
+   - 展示标题：`text-2xl` ~ `text-3xl font-bold`
+   - 副标题：`text-lg` ~ `text-xl font-semibold`
+   - 正文：`text-sm` ~ `text-base`
+   - 辅助文字：`text-xs` ~ `text-sm text-slate-500`
+
+7. **布局约束**：
+   - 最大宽度：`max-w-4xl` 或 `max-w-2xl`
+   - 响应式：`grid-cols-1 sm:grid-cols-2`
+   - 弹性布局：`flex flex-col gap-{n}`
+
+### 6.3 组件渲染规则
+
+1. **禁止硬编码样式**：所有样式必须从 `VibeConfig` 动态读取。
+
+2. **动态类名组合**：使用 `generateVibeClasses(role)` 辅助函数生成标准类名。
+
+3. **Tailwind 与内联样式混用**：
+   - 结构性样式（布局、间距）：使用 Tailwind 类名
+   - 动态颜色/字体：使用内联 `style={{}}`
+
+4. **图案装饰**：
+   - `vibe-pattern-dots`：圆点图案（`radial-gradient`）
+   - `vibe-pattern-lines`：对角线条纹
+   - `vibe-pattern-waves`：波浪条纹
+   - `vibe-pattern-grid`：网格图案
   };
   spacing: {
     cardPadding: string;
