@@ -10,7 +10,6 @@ export default function HomePage() {
   const [input, setInput] = useState('');
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [currentPlan, setCurrentPlan] = useState<Message['plan'] | null>(null);
   const [showRoleSelection, setShowRoleSelection] = useState(true);
   const [clarifyingQuestions, setClarifyingQuestions] = useState<ClarifyingQuestion[] | null>(null);
 
@@ -37,8 +36,6 @@ export default function HomePage() {
     setInput('');
     setIsStreaming(true);
 
-    const vibe = getVibeConfig(selectedRole);
-
     setMessages(prev => [...prev, {
       id: crypto.randomUUID(),
       role: 'assistant',
@@ -59,7 +56,6 @@ export default function HomePage() {
       const data = await response.json();
 
       setIsStreaming(false);
-      setCurrentPlan(data.plan || null);
       setClarifyingQuestions(data.questions || null);
 
       setMessages(prev => {
@@ -101,7 +97,6 @@ export default function HomePage() {
       role: 'assistant',
       content: '✅ 行程已确认！祝你们旅途愉快～ 🌟',
     }]);
-    setCurrentPlan(null);
     setShowRoleSelection(true);
     setSelectedRole(null);
   }, []);
