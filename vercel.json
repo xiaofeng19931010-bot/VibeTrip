@@ -1,0 +1,9 @@
+{
+  "root": true,
+  "projects": [
+    {
+      "path": "apps/web",
+      "target": "production"
+    }
+  ]
+}
