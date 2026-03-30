@@ -113,7 +113,51 @@ export class AnthropicService extends BaseLLMService {
   }
 }
 
-export type LLMProvider = 'openai' | 'anthropic';
+export class ZhipuService extends BaseLLMService {
+  async complete(prompt: string, options?: LLMOptions): Promise<LLMResponse> {
+    if (!this.apiKey) {
+      throw new Error('Zhipu AI API key not configured');
+    }
+
+    const baseURL = this.baseURL || 'https://open.bigmodel.cn/api/paas/v4';
+    const model = options?.model || 'glm-4-flash';
+
+    const response = await fetch(`${baseURL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: options?.temperature ?? 0.7,
+        max_tokens: options?.maxTokens ?? 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Zhipu AI API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json() as {
+      choices: Array<{ message: { content: string } }>;
+      usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+    };
+
+    return {
+      content: data.choices[0]?.message?.content || '',
+      usage: {
+        promptTokens: data.usage?.prompt_tokens || 0,
+        completionTokens: data.usage?.completion_tokens || 0,
+        totalTokens: data.usage?.total_tokens || 0,
+      },
+    };
+  }
+}
+
+export type LLMProvider = 'openai' | 'anthropic' | 'zhipu';
 
 export function createLLMService(
   provider: LLMProvider,
@@ -125,6 +169,8 @@ export function createLLMService(
       return new OpenAIService(apiKey, baseURL);
     case 'anthropic':
       return new AnthropicService(apiKey, baseURL);
+    case 'zhipu':
+      return new ZhipuService(apiKey, baseURL);
     default:
       throw new Error(`Unknown LLM provider: ${provider}`);
   }

@@ -27,7 +27,7 @@ program
   .version('0.1.0')
   .option('--api-key <key>', 'LLM API Key for OpenAI/Anthropic (BYOK)')
   .option('--model <model>', 'Model to use: gpt-4o-mini, claude-3-5-haiku-20240307, etc.')
-  .option('--provider <provider>', 'LLM provider: openai, anthropic', 'openai')
+  .option('--provider <provider>', 'LLM provider: openai, anthropic, zhipu', 'openai')
   .option('--base-url <url>', 'Custom LLM base URL')
   .hook('preAction', (thisCommand) => {
     initServices();
@@ -35,7 +35,7 @@ program
     if (options.apiKey) {
       initPlanningService({
         apiKey: options.apiKey,
-        llmProvider: options.provider as 'openai' | 'anthropic' || 'openai',
+        llmProvider: options.provider as 'openai' | 'anthropic' | 'zhipu',
         baseURL: options.baseUrl,
       });
     }

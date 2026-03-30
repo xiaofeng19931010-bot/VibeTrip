@@ -1,7 +1,6 @@
 -- VibeTrip Database Schema Migration
 -- Version: 001
 -- Date: 2026-03-30
--- Description: Initial schema for trips, itineraries, captures, memory artifacts, share packages, and audit logs
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -14,12 +13,13 @@ CREATE TYPE memory_format AS ENUM ('handbook', 'poster');
 CREATE TYPE share_channel AS ENUM ('xhs', 'moments', 'weibo', 'other');
 CREATE TYPE artifact_type AS ENUM ('memory', 'share', 'export');
 
--- Users table (extends Supabase Auth)
+-- Users table (standalone, not requiring Supabase Auth)
 CREATE TABLE public.users (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   email TEXT,
   display_name TEXT,
   avatar_url TEXT,
+  external_id TEXT,
   preferences JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -69,6 +69,9 @@ CREATE TABLE public.itinerary_items (
   title TEXT NOT NULL,
   description TEXT,
   location TEXT,
+  latitude DECIMAL(10, 8),
+  longitude DECIMAL(11, 8),
+  address TEXT,
   start_time TIMESTAMPTZ,
   end_time TIMESTAMPTZ,
   "order" INTEGER NOT NULL DEFAULT 0,
@@ -86,7 +89,6 @@ CREATE TABLE public.captures (
   trip_id UUID NOT NULL REFERENCES public.trips(id) ON DELETE CASCADE,
   type capture_type NOT NULL,
   content TEXT NOT NULL,
-  location POINT,
   latitude DECIMAL(10, 8),
   longitude DECIMAL(11, 8),
   captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -107,9 +109,13 @@ CREATE TABLE public.memory_artifacts (
   type artifact_type NOT NULL,
   format memory_format,
   title TEXT,
+  description TEXT,
   content JSONB NOT NULL,
   storage_url TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  file_path TEXT,
+  status TEXT DEFAULT 'pending',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Indexes for memory_artifacts
@@ -123,8 +129,10 @@ CREATE TABLE public.share_packages (
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   channel share_channel NOT NULL,
   title TEXT,
-  content JSONB NOT NULL,
-  copyable_text TEXT,
+  content TEXT,
+  hashtags TEXT[],
+  images TEXT[],
+  metadata JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -153,7 +161,7 @@ CREATE INDEX idx_audit_logs_actor_id ON public.audit_logs(actor_id);
 CREATE INDEX idx_audit_logs_trip_id ON public.audit_logs(trip_id);
 CREATE INDEX idx_audit_logs_created_at ON public.audit_logs(created_at);
 
--- API Keys table (for BYOK and external integrations)
+-- API Keys table
 CREATE TABLE public.api_keys (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
@@ -170,91 +178,16 @@ CREATE TABLE public.api_keys (
 CREATE INDEX idx_api_keys_user_id ON public.api_keys(user_id);
 CREATE INDEX idx_api_keys_key_hash ON public.api_keys(key_hash);
 
--- Row Level Security (RLS) Policies
-
--- Enable RLS on all tables
-ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.trips ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.itineraries ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.itinerary_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.captures ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.memory_artifacts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.share_packages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
-
--- Users policies
-CREATE POLICY "Users can view own profile" ON public.users
-  FOR SELECT USING (auth.uid() = id);
-
-CREATE POLICY "Users can update own profile" ON public.users
-  FOR UPDATE USING (auth.uid() = id);
-
--- Trips policies
-CREATE POLICY "Users can view own trips" ON public.trips
-  FOR SELECT USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can create own trips" ON public.trips
-  FOR INSERT WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update own trips" ON public.trips
-  FOR UPDATE USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete own trips" ON public.trips
-  FOR DELETE USING (auth.uid() = user_id);
-
--- Itineraries policies (via trip access)
-CREATE POLICY "Users can view itineraries via trip" ON public.itineraries
-  FOR SELECT USING (
-    EXISTS (SELECT 1 FROM public.trips WHERE trips.id = itineraries.trip_id AND trips.user_id = auth.uid())
-  );
-
-CREATE POLICY "Users can insert itineraries via trip" ON public.itineraries
-  FOR INSERT WITH CHECK (
-    EXISTS (SELECT 1 FROM public.trips WHERE trips.id = itineraries.trip_id AND trips.user_id = auth.uid())
-  );
-
-CREATE POLICY "Users can update itineraries via trip" ON public.itineraries
-  FOR UPDATE USING (
-    EXISTS (SELECT 1 FROM public.trips WHERE trips.id = itineraries.trip_id AND trips.user_id = auth.uid())
-  );
-
-CREATE POLICY "Users can delete itineraries via trip" ON public.itineraries
-  FOR DELETE USING (
-    EXISTS (SELECT 1 FROM public.trips WHERE trips.id = itineraries.trip_id AND trips.user_id = auth.uid())
-  );
-
--- Itinerary Items policies (via itinerary -> trip)
-CREATE POLICY "Users can manage items via itinerary" ON public.itinerary_items
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM public.itineraries
-      JOIN public.trips ON trips.id = itineraries.trip_id
-      WHERE itineraries.id = itinerary_items.itinerary_id AND trips.user_id = auth.uid()
-    )
-  );
-
--- Captures policies (via trip access)
-CREATE POLICY "Users can manage captures via trip" ON public.captures
-  FOR ALL USING (
-    EXISTS (SELECT 1 FROM public.trips WHERE trips.id = captures.trip_id AND trips.user_id = auth.uid())
-  );
-
--- Memory Artifacts policies
-CREATE POLICY "Users can manage own artifacts" ON public.memory_artifacts
-  FOR ALL USING (auth.uid() = user_id);
-
--- Share Packages policies
-CREATE POLICY "Users can manage own shares" ON public.share_packages
-  FOR ALL USING (auth.uid() = user_id);
-
--- Audit Logs policies (read via service role only, append via service)
-CREATE POLICY "Service can insert audit logs" ON public.audit_logs
-  FOR INSERT WITH CHECK (true);
-
--- API Keys policies
-CREATE POLICY "Users can manage own api keys" ON public.api_keys
-  FOR ALL USING (auth.uid() = user_id);
+-- Row Level Security (RLS) Policies - DISABLED for MVP testing
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.trips DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.itineraries DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.itinerary_items DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.captures DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.memory_artifacts DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.share_packages DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.api_keys DISABLE ROW LEVEL SECURITY;
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION public.update_updated_at()
@@ -276,6 +209,7 @@ CREATE TRIGGER update_trips_updated_at
 
 CREATE TRIGGER update_itineraries_updated_at
   BEFORE UPDATE ON public.itineraries
+  FOR EACH UPDATE ON public.itineraries
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
 CREATE TRIGGER update_itinerary_items_updated_at

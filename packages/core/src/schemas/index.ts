@@ -29,14 +29,14 @@ export const TripSchema = z.object({
   user_id: z.string(),
   title: z.string().min(1).max(200),
   destination: z.string().min(1),
-  start_date: z.string().datetime(),
-  end_date: z.string().datetime(),
+  start_date: z.string(),
+  end_date: z.string(),
   role: RoleType,
   status: TripStatus.default('draft'),
-  budget: z.number().optional(),
-  preferences: z.record(z.unknown()).optional(),
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
+  budget: z.number().nullable().optional(),
+  preferences: z.record(z.unknown()).nullable().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
 });
 export type Trip = z.infer<typeof TripSchema>;
 

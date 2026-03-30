@@ -8,7 +8,7 @@ import type { BaseLLMService } from '../../services/llm.js';
 import { createLLMService } from '../../services/llm.js';
 
 export interface PlanningServiceOptions {
-  llmProvider?: 'openai' | 'anthropic';
+  llmProvider?: 'openai' | 'anthropic' | 'zhipu';
   apiKey?: string;
   baseURL?: string;
 }
@@ -114,9 +114,17 @@ ${budget ? `预算：${budget}元/天` : ''}
 
   private parseLLMResponse(content: string): PlannedDay[] {
     try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found in response');
-      const parsed = JSON.parse(jsonMatch[0]);
+      let jsonStr = content.trim();
+      const jsonMatch = jsonStr.match(/```json\n?([\s\S]*?)\n?```/);
+      if (jsonMatch && jsonMatch[1]) {
+        jsonStr = jsonMatch[1].trim();
+      } else {
+        const braceMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (braceMatch) {
+          jsonStr = braceMatch[0];
+        }
+      }
+      const parsed = JSON.parse(jsonStr);
       if (parsed.days && Array.isArray(parsed.days)) {
         return parsed.days.map((day: { dayNumber: number; date: string; summary: string; items: Array<{ type: string; title: string; description?: string; location?: string; startTime?: string; endTime?: string; order: number }> }) => ({
           dayNumber: day.dayNumber,
@@ -137,6 +145,7 @@ ${budget ? `预算：${budget}元/天` : ''}
       return [];
     } catch (error) {
       console.error('Failed to parse LLM response:', error);
+      console.error('Content preview:', content.substring(0, 500));
       return [];
     }
   }
