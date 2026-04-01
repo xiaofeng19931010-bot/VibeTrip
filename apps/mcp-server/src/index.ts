@@ -14,6 +14,14 @@ export interface ToolDefinition {
   handler: ToolHandler;
 }
 
+function getApiKey(): string {
+  const apiKey = process.env.ZHIPU_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('API密钥未配置，请设置 ZHIPU_API_KEY 或 OPENAI_API_KEY 环境变量');
+  }
+  return apiKey;
+}
+
 function buildEnvelopeResponse(envelope: A2UIEnvelope): string {
   return JSON.stringify(envelope);
 }
@@ -36,8 +44,10 @@ export const TOOLS: ToolDefinition[] = [
         budget?: number; 
       };
       
+      const apiKey = getApiKey();
+      
       const planningService = new PlanningService({
-        apiKey: process.env.ZHIPU_API_KEY || process.env.OPENAI_API_KEY,
+        apiKey,
       });
       
       const result = await planningService.plan({
