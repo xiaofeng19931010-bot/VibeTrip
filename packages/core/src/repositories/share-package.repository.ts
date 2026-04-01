@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { getGlobalSupabaseClient } from '../supabase/index.js';
-import type { SharePackage, ShareChannel } from '../schemas/index.js';
+import type { SharePackage, ShareChannel, SharePackageMetadata } from '../schemas/index.js';
 
 export interface CreateSharePackageInput {
   trip_id: string;
@@ -9,7 +9,7 @@ export interface CreateSharePackageInput {
   content: string;
   hashtags?: string[];
   images?: string[];
-  metadata?: Record<string, unknown>;
+  metadata?: SharePackageMetadata;
 }
 
 export interface UpdateSharePackageInput {
@@ -17,7 +17,7 @@ export interface UpdateSharePackageInput {
   content?: string;
   hashtags?: string[];
   images?: string[];
-  metadata?: Record<string, unknown>;
+  metadata?: SharePackageMetadata;
 }
 
 export class SharePackageRepository {

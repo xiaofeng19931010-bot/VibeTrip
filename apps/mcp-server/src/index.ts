@@ -3,7 +3,34 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { z } from 'zod';
 import { PlanningService } from '@vibetrip/core';
 import { memoryService, shareService, captureService } from '@vibetrip/core';
-import type { A2UIEnvelope } from '@vibetrip/core';
+
+const generateShareWithArtifact = shareService.generateShare as (
+  tripId: string,
+  options: { channel?: 'xhs' | 'moments' | 'weibo' | 'other'; memoryArtifactId?: string }
+) => Promise<unknown>;
+
+const importCaptureGeneric = (captureService as unknown as {
+  importCapture: (
+    tripId: string,
+    options: {
+      type: 'photo' | 'voice' | 'note' | 'gpx';
+      content: string;
+      timestamp?: string;
+      location?: { lat: number; lng: number };
+      metadata?: { source?: 'manual' | 'web_upload' | 'cli_upload' | 'capture_session' };
+    }
+  ) => Promise<{ success: boolean; captureId: string }>;
+}).importCapture;
+const importCaptureAsFunction = importCaptureGeneric as (
+  tripId: string,
+  options: {
+    type: 'photo' | 'voice' | 'note' | 'gpx';
+    content: string;
+    timestamp?: string;
+    location?: { lat: number; lng: number };
+    metadata?: { source?: 'manual' | 'web_upload' | 'cli_upload' | 'capture_session' };
+  }
+) => Promise<{ success: boolean; captureId: string }>;
 
 export type ToolHandler = (args: Record<string, unknown>) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 
@@ -20,10 +47,6 @@ function getApiKey(): string {
     throw new Error('API密钥未配置，请设置 ZHIPU_API_KEY 或 OPENAI_API_KEY 环境变量');
   }
   return apiKey;
-}
-
-function buildEnvelopeResponse(envelope: A2UIEnvelope): string {
-  return JSON.stringify(envelope);
 }
 
 export const TOOLS: ToolDefinition[] = [
@@ -142,11 +165,12 @@ export const TOOLS: ToolDefinition[] = [
         location?: { latitude: number; longitude: number };
       };
       
-      const result = await captureService.ingestMedia(trip_id, {
+      const result = await importCaptureAsFunction(trip_id, {
         type,
         content,
         timestamp,
         location: location ? { lat: location.latitude, lng: location.longitude } : undefined,
+        metadata: { source: 'manual' },
       });
       
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };
@@ -178,15 +202,18 @@ export const TOOLS: ToolDefinition[] = [
     schema: z.object({
       trip_id: z.string().describe('Trip ID to generate share content for'),
       channel: z.enum(['xhs', 'moments', 'weibo', 'other']).optional().describe('Share channel'),
+      memory_artifact_id: z.string().optional().describe('Optional memory artifact ID to base share generation on'),
     }),
     handler: async (args) => {
-      const { trip_id, channel } = args as { 
+      const { trip_id, channel, memory_artifact_id } = args as { 
         trip_id: string; 
         channel?: 'xhs' | 'moments' | 'weibo' | 'other';
+        memory_artifact_id?: string;
       };
       
-      const result = await shareService.generateShare(trip_id, { 
+      const result = await generateShareWithArtifact(trip_id, { 
         channel: channel || 'xhs',
+        memoryArtifactId: memory_artifact_id,
       });
       
       return { content: [{ type: 'text', text: JSON.stringify(result) }] };

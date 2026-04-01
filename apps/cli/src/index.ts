@@ -9,6 +9,19 @@ import { mediaIngestService } from '@vibetrip/core';
 import { memoryService } from '@vibetrip/core';
 import { shareService } from '@vibetrip/core';
 
+const generateShareWithArtifact = shareService.generateShare as (
+  tripId: string,
+  options: { channel?: 'xhs' | 'moments' | 'weibo' | 'other'; memoryArtifactId?: string }
+) => Promise<{
+  id: string;
+  title: string;
+  body: string;
+  hashtags: string[];
+  images: string[];
+  copyableText: string;
+  memoryArtifactId?: string;
+}>;
+
 function initServices() {
   const supabaseUrl = process.env.SUPABASE_URL || '';
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || '';
@@ -227,12 +240,15 @@ program
       .description('Generate share content')
       .argument('<trip_id>', 'Trip ID')
       .option('-c, --channel <channel>', 'Channel: xhs, moments, weibo, other', 'xhs')
+      .option('-a, --artifact <artifactId>', 'Optional memory artifact ID to base share generation on')
       .action(async (tripId, options) => {
         console.log('📤 Generating share content for trip:', tripId);
         console.log('📱 Channel:', options.channel);
+        if (options.artifact) console.log('🧩 Memory Artifact:', options.artifact);
         try {
-          const result = await shareService.generateShare(tripId, {
+          const result = await generateShareWithArtifact(tripId, {
             channel: options.channel as 'xhs' | 'moments' | 'weibo' | 'other',
+            memoryArtifactId: typeof options.artifact === 'string' ? options.artifact : undefined,
           });
           console.log('✅ Share content generated!');
           console.log('📦 Package ID:', result.id);

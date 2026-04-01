@@ -29,6 +29,15 @@
   - TypeScript 的 `type` 或 `interface` 必须通过 `zod.infer<typeof schema>` 自动推导，禁止双写。
 - **数据库类型自动同步**：
   - 数据库表结构变更后，必须执行 `supabase gen types typescript` 覆盖本地文件，禁止手动修改 `database.types.ts`。
+- **Memory / Share 合同一致性**：
+  - `memory_artifacts` 与 `share_packages` 的迁移文件、Supabase generated types、Zod schema、Repository 入参必须保持一致。
+  - `captures` 的迁移文件、Supabase generated types、Zod schema、Repository 入参也必须保持一致，避免上传链路与记忆生成链路出现素材字段漂移。
+  - 对于旅行记忆与分享内容包，默认以 `trip_id` 作为主归属键，不重复维护额外的归属字段；需要追溯用户时统一通过 `trip -> user_id` 解析，避免单体内多份归属真源漂移。
+  - `captures.metadata` 禁止长期保持松散 `record` 结构，必须显式约束至少包含 `source`，并根据素材来源补充 `bucket/path/fileName/mimeType/size/publicUrl/originalPath/filename/storagePath/hasTranscription/pointCount/startTime/endTime`。
+  - 素材入库禁止长期存在多套写法：Web、CLI、MCP、Capture Session 的持久化应尽量复用单一领域入口或共享底层 `persistCapture` 能力，避免规则漂移。
+  - 素材入库语义必须分清：通用导入入口不得依赖 capture session；会话内采集入口必须显式表达 session 依赖，禁止把两类语义混在同一个外部接口名下。
+  - `memory_artifacts.metadata` 禁止长期保持松散 `record` 结构，必须显式约束至少包含 `tripId/format/generatedAt/contentType/bucket/captureIds/captureCount/destination/role`。
+  - `share_packages.metadata` 禁止长期保持松散 `record` 结构，必须显式约束至少包含 `tripId/channel/style/generatedAt`，并在存在旅行记忆产物时补充 `memoryArtifactId/memoryArtifactTitle/memoryArtifactUrl`。
 - **A2UI 协议单一真源**：
   - A2UI JSON 协议必须以 Zod schema 形式定义在 `packages/core/schemas` 中，至少包含：`version`, `trace_id`, `interaction_id`, `view`, `actions`, `tool_call`, `tool_result`, `client_state`, `server_state`。
   - Web Renderer、CLI 和 MCP 在消费或输出交互结构时，必须共用同一份协议定义，禁止各自维护私有 JSON 格式。
@@ -75,6 +84,8 @@
   - 只有纯视觉状态可留在本地；涉及业务推进的交互必须通过 `addToolResult` 或等效机制回传给 LLM。
   - `target=local` 与 `target=llm` 必须严格区分：本地动作不得误触发推理，请求级动作不得只停留在前端状态。
   - 上传型动作必须先通过受控上传接口完成文件落存，再将 `bucket/path/publicUrl` 等资产元数据回填到 `tool_result.uploadedAssets`，禁止把原始 File 对象直接塞进协议回传。
+  - 上传型动作在进入素材确认卡片前，必须进一步写入真实 `captures` 持久化层，并把 `captureId` 或等价引用保存在后续 `server_state` 中；禁止只有 Storage 落存没有领域入库。
+  - 素材确认卡片不得是纯展示；必须允许用户显式保留/剔除素材，并把最终保留集合以 `selected_capture_ids` 或等价字段透传给记忆生成链路。
   - 推荐实现拆层：`Renderer`（渲染）、`Registry`（节点映射）、`Envelope Builders`（服务端界面生成）、`Interaction Runtime`（回传闭环），禁止把所有逻辑塞进单个页面文件。
 - **协议健壮性**：
   - 所有 A2UI JSON 在渲染前必须先经过 schema 校验。
@@ -83,6 +94,8 @@
   - 生成类场景必须形成参数确认界面：例如旅行记忆生成前必须让用户确认模板/风格，禁止素材确认后直接开始后台生成。
   - 结果类场景必须形成显式结果卡片：例如 `generate_memory` 完成后必须先返回记忆结果卡片，再进入分享参数确认；禁止后台生成后直接跳转到下一业务阶段。
   - 分享类场景必须形成前置确认界面：例如 `generate_share` 前必须让用户确认渠道与文案调性，禁止直接按默认平台静默生成。
+  - 当 `trip_id` 等关键上下文已存在时，Web Chat Runtime 必须优先调用真实 Core Service（如 `memoryService`、`shareService`）生成结果，再由 A2UI 渲染；禁止长期停留在前端拼装的假结果卡片阶段。
+  - 当 `memory_artifact_id` 已存在时，分享链路必须显式把该 artifact 透传给 `shareService` 或等价领域服务，禁止只依赖 trip/captures 做“脱钩式”分享生成。
 
 ## 7. 实战错误总结与避坑指南 (Lessons Learned)
 

@@ -1,8 +1,9 @@
-import type { ShareChannel, RoleType } from '../schemas/index.js';
+import type { ShareChannel, RoleType, SharePackageMetadata } from '../schemas/index.js';
 import type { Itinerary } from '../schemas/index.js';
 import { tripRepository } from '../repositories/trip.repository.js';
 import { itineraryRepository } from '../repositories/itinerary.repository.js';
 import { captureRepository } from '../repositories/capture.repository.js';
+import { memoryArtifactRepository } from '../repositories/memory-artifact.repository.js';
 import { sharePackageRepository } from '../repositories/share-package.repository.js';
 
 export interface ShareContent {
@@ -10,13 +11,18 @@ export interface ShareContent {
   body: string;
   hashtags: string[];
   images: string[];
-  metadata?: Record<string, unknown>;
+  metadata?: SharePackageMetadata;
 }
 
 export interface ShareTemplate {
   channel: ShareChannel;
   style: 'casual' | 'formal' | 'romantic' | 'adventure';
   emojiEnabled: boolean;
+}
+
+export interface ShareGenerationOptions {
+  style?: 'casual' | 'formal' | 'romantic' | 'adventure';
+  memoryArtifactId?: string;
 }
 
 const CHANNEL_TEMPLATES: Record<ShareChannel, ShareTemplate> = {
@@ -77,7 +83,7 @@ const EMOJIS = {
 export async function generateShareContent(
   tripId: string,
   channel: ShareChannel,
-  options?: { style?: 'casual' | 'formal' | 'romantic' | 'adventure' }
+  options?: ShareGenerationOptions
 ): Promise<ShareContent> {
   const trip = await tripRepository.findById(tripId);
 
@@ -87,6 +93,9 @@ export async function generateShareContent(
 
   const itineraries = await itineraryRepository.findByTripId(tripId);
   const captures = await captureRepository.findByTripId(tripId);
+  const memoryArtifact = options?.memoryArtifactId
+    ? await memoryArtifactRepository.findById(options.memoryArtifactId)
+    : null;
 
   const template = CHANNEL_TEMPLATES[channel];
   const style = options?.style || template.style;
@@ -101,19 +110,37 @@ export async function generateShareContent(
     .map(c => c.content)
     .slice(0, 9);
 
-  const body = generateBody(trip, itineraries, captures, style, template.emojiEnabled);
+  const body = generateBody(
+    trip,
+    itineraries,
+    captures,
+    style,
+    template.emojiEnabled,
+    memoryArtifact
+      ? {
+          title: memoryArtifact.title,
+          url: memoryArtifact.storage_url || undefined,
+          type: memoryArtifact.type,
+        }
+      : undefined,
+  );
+
+  const metadata: SharePackageMetadata = {
+    tripId: trip.id,
+    channel,
+    style,
+    generatedAt: new Date().toISOString(),
+    memoryArtifactId: memoryArtifact?.id,
+    memoryArtifactTitle: memoryArtifact?.title || undefined,
+    memoryArtifactUrl: memoryArtifact?.storage_url || undefined,
+  };
 
   return {
-    title: `${trip.destination}旅行回顾`,
+    title: memoryArtifact?.title ? `${memoryArtifact.title}分享版` : `${trip.destination}旅行回顾`,
     body,
     hashtags: allHashtags,
     images: photos,
-    metadata: {
-      tripId: trip.id,
-      channel,
-      style,
-      generatedAt: new Date().toISOString(),
-    },
+    metadata,
   };
 }
 
@@ -127,7 +154,12 @@ function generateBody(
   itineraries: Itinerary[],
   captures: Array<{ type: string; content: string }>,
   style: 'casual' | 'formal' | 'romantic' | 'adventure',
-  emojiEnabled: boolean
+  emojiEnabled: boolean,
+  memoryArtifact?: {
+    title: string;
+    url?: string;
+    type: string;
+  },
 ): string {
   const e = emojiEnabled ? EMOJIS : {
     location: '', date: '', transport: '', food: '', attraction: '',
@@ -175,6 +207,13 @@ function generateBody(
       body += `${formatItinerarySummary(itineraries, e)}\n\n`;
       body += `${e.sparkle} 开心的旅行！`;
       break;
+  }
+
+  if (memoryArtifact) {
+    body += `\n\n已关联旅行记忆：${memoryArtifact.title}`;
+    if (memoryArtifact.url) {
+      body += `\n记忆产物：${memoryArtifact.url}`;
+    }
   }
 
   return body;
@@ -264,9 +303,11 @@ export const shareService = {
   generateShareContent,
   generateMultipleVersions,
   saveSharePackage,
-  generateShare: async (tripId: string, options: { channel?: 'xhs' | 'moments' | 'weibo' | 'other' }) => {
+  generateShare: async (tripId: string, options: { channel?: 'xhs' | 'moments' | 'weibo' | 'other'; memoryArtifactId?: string }) => {
     const channel = options.channel || 'xhs';
-    const content = await generateShareContent(tripId, channel);
+    const content = await generateShareContent(tripId, channel, {
+      memoryArtifactId: options.memoryArtifactId,
+    });
     const id = await saveSharePackage(tripId, channel, content);
     return {
       id,
@@ -274,6 +315,7 @@ export const shareService = {
       body: content.body,
       hashtags: content.hashtags,
       images: content.images,
+      memoryArtifactId: options.memoryArtifactId,
       copyableText: `${content.title}\n\n${content.body}\n\n${content.hashtags.join(' ')}`,
     };
   },

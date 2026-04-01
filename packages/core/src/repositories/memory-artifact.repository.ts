@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { getGlobalSupabaseClient } from '../supabase/index.js';
-import type { MemoryArtifact, MemoryArtifactType } from '../schemas/index.js';
+import type { MemoryArtifact, MemoryArtifactMetadata, MemoryArtifactType } from '../schemas/index.js';
 
 export interface CreateMemoryArtifactInput {
   trip_id: string;
@@ -9,7 +9,7 @@ export interface CreateMemoryArtifactInput {
   description?: string;
   storage_url?: string;
   file_path?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: MemoryArtifactMetadata;
 }
 
 export interface UpdateMemoryArtifactInput {
@@ -17,7 +17,7 @@ export interface UpdateMemoryArtifactInput {
   description?: string;
   storage_url?: string;
   file_path?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: MemoryArtifactMetadata;
   status?: 'pending' | 'processing' | 'completed' | 'failed';
 }
 

@@ -79,10 +79,40 @@ export const CaptureSchema = z.object({
   content: z.string(),
   location: GeoPointSchema.optional(),
   timestamp: z.string().datetime(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.object({
+    source: z.enum(['web_upload', 'cli_upload', 'capture_session', 'manual']).optional(),
+    captureType: z.enum(['location']).optional(),
+    bucket: z.string().min(1).optional(),
+    path: z.string().min(1).optional(),
+    fileName: z.string().min(1).optional(),
+    mimeType: z.string().min(1).optional(),
+    size: z.number().nonnegative().optional(),
+    publicUrl: z.string().url().optional(),
+    originalPath: z.string().min(1).optional(),
+    filename: z.string().min(1).optional(),
+    storagePath: z.string().min(1).optional(),
+    hasTranscription: z.boolean().optional(),
+    pointCount: z.number().int().nonnegative().optional(),
+    startTime: z.string().datetime().optional(),
+    endTime: z.string().datetime().optional(),
+  }).optional(),
   created_at: z.string().datetime(),
 });
 export type Capture = z.infer<typeof CaptureSchema>;
+export type CaptureMetadata = NonNullable<Capture['metadata']>;
+
+export const MemoryArtifactMetadataSchema = z.object({
+  tripId: z.string().uuid(),
+  format: MemoryArtifactType,
+  generatedAt: z.string().datetime(),
+  contentType: z.enum(['markdown', 'text']),
+  bucket: z.string().min(1),
+  captureIds: z.array(z.string().uuid()).default([]),
+  captureCount: z.number().int().nonnegative(),
+  destination: z.string().min(1),
+  role: RoleType,
+});
+export type MemoryArtifactMetadata = z.infer<typeof MemoryArtifactMetadataSchema>;
 
 export const MemoryArtifactSchema = z.object({
   id: z.string().uuid(),
@@ -92,12 +122,23 @@ export const MemoryArtifactSchema = z.object({
   description: z.string().optional(),
   storage_url: z.string().url().optional(),
   file_path: z.string().optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: MemoryArtifactMetadataSchema.optional(),
   status: z.enum(['pending', 'processing', 'completed', 'failed']).default('pending'),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
 export type MemoryArtifact = z.infer<typeof MemoryArtifactSchema>;
+
+export const SharePackageMetadataSchema = z.object({
+  tripId: z.string().uuid(),
+  channel: ShareChannel,
+  style: z.enum(['casual', 'formal', 'romantic', 'adventure']),
+  generatedAt: z.string().datetime(),
+  memoryArtifactId: z.string().uuid().optional(),
+  memoryArtifactTitle: z.string().min(1).optional(),
+  memoryArtifactUrl: z.string().url().optional(),
+});
+export type SharePackageMetadata = z.infer<typeof SharePackageMetadataSchema>;
 
 export const SharePackageSchema = z.object({
   id: z.string().uuid(),
@@ -107,7 +148,7 @@ export const SharePackageSchema = z.object({
   content: z.string(),
   hashtags: z.array(z.string()).default([]),
   images: z.array(z.string()).default([]),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: SharePackageMetadataSchema.optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });

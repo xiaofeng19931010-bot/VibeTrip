@@ -9,9 +9,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TYPE trip_status AS ENUM ('draft', 'planned', 'traveling', 'completed', 'archived');
 CREATE TYPE role_type AS ENUM ('parents', 'family', 'couple', 'friends', 'soldier');
 CREATE TYPE capture_type AS ENUM ('photo', 'voice', 'note', 'gpx', 'location');
-CREATE TYPE memory_format AS ENUM ('handbook', 'poster');
+CREATE TYPE memory_format AS ENUM ('handbook', 'poster', 'video');
 CREATE TYPE share_channel AS ENUM ('xhs', 'moments', 'weibo', 'other');
-CREATE TYPE artifact_type AS ENUM ('memory', 'share', 'export');
 
 -- Users table (standalone, not requiring Supabase Auth)
 CREATE TABLE public.users (
@@ -89,9 +88,8 @@ CREATE TABLE public.captures (
   trip_id UUID NOT NULL REFERENCES public.trips(id) ON DELETE CASCADE,
   type capture_type NOT NULL,
   content TEXT NOT NULL,
-  latitude DECIMAL(10, 8),
-  longitude DECIMAL(11, 8),
-  captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  location JSONB,
+  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   metadata JSONB DEFAULT '{}',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -99,20 +97,18 @@ CREATE TABLE public.captures (
 -- Indexes for captures
 CREATE INDEX idx_captures_trip_id ON public.captures(trip_id);
 CREATE INDEX idx_captures_type ON public.captures(type);
-CREATE INDEX idx_captures_captured_at ON public.captures(captured_at);
+CREATE INDEX idx_captures_timestamp ON public.captures(timestamp);
 
 -- Memory Artifacts table
 CREATE TABLE public.memory_artifacts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   trip_id UUID NOT NULL REFERENCES public.trips(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-  type artifact_type NOT NULL,
-  format memory_format,
-  title TEXT,
+  type memory_format NOT NULL,
+  title TEXT NOT NULL,
   description TEXT,
-  content JSONB NOT NULL,
   storage_url TEXT,
   file_path TEXT,
+  metadata JSONB,
   status TEXT DEFAULT 'pending',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -120,20 +116,20 @@ CREATE TABLE public.memory_artifacts (
 
 -- Indexes for memory_artifacts
 CREATE INDEX idx_memory_artifacts_trip_id ON public.memory_artifacts(trip_id);
-CREATE INDEX idx_memory_artifacts_user_id ON public.memory_artifacts(user_id);
+CREATE INDEX idx_memory_artifacts_type ON public.memory_artifacts(type);
 
 -- Share Packages table
 CREATE TABLE public.share_packages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   trip_id UUID NOT NULL REFERENCES public.trips(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   channel share_channel NOT NULL,
-  title TEXT,
-  content TEXT,
-  hashtags TEXT[],
-  images TEXT[],
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  hashtags TEXT[] DEFAULT '{}',
+  images TEXT[] DEFAULT '{}',
   metadata JSONB,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Indexes for share_packages

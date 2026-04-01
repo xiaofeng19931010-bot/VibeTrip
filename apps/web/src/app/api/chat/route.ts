@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PlanningService } from '@vibetrip/core';
+import { PlanningService, mediaIngestService, memoryService, shareService } from '@vibetrip/core';
 import type { A2UIToolResult, ClarifyingQuestion, RoleType, TripPlan } from '@/components/types';
 import {
   buildBudgetEnvelope,
@@ -21,6 +21,24 @@ interface ChatRequestBody {
   toolResult?: A2UIToolResult;
   serverState?: Record<string, unknown>;
 }
+
+const generateMemoryWithSelection = memoryService.generateMemory as (
+  tripId: string,
+  options: { format?: 'handbook' | 'poster'; captureIds?: string[] }
+) => Promise<{ id: string; url: string; title: string; format: 'handbook' | 'poster' }>;
+
+const generateShareWithArtifact = shareService.generateShare as (
+  tripId: string,
+  options: { channel?: 'xhs' | 'moments' | 'weibo' | 'other'; memoryArtifactId?: string }
+) => Promise<{
+  id: string;
+  title: string;
+  body: string;
+  hashtags: string[];
+  images: string[];
+  copyableText: string;
+  memoryArtifactId?: string;
+}>;
 
 function parsePlanMeta(message: string) {
   const daysMatch = message.match(/(\d+)\s*天/);
@@ -118,6 +136,7 @@ export async function POST(req: NextRequest) {
 
       if (intent === 'submit_media') {
         const uploadedAssets = toolResult.uploadedAssets ?? [];
+        const tripId = typeof serverState?.trip_id === 'string' ? serverState.trip_id : null;
 
         if (uploadedAssets.length === 0) {
           return NextResponse.json({
@@ -125,41 +144,116 @@ export async function POST(req: NextRequest) {
           }, { status: 400 });
         }
 
+        if (!tripId) {
+          return NextResponse.json({
+            envelope: buildErrorEnvelope('当前缺少 trip_id，暂时无法把素材写入真实旅行记录。请重新确认行程后再试。'),
+          }, { status: 400 });
+        }
+
+        const ingestResults = await mediaIngestService.ingestUploadedAssets(
+          tripId,
+          uploadedAssets.map((asset) => ({
+            bucket: asset.bucket,
+            path: asset.path,
+            fileName: asset.fileName,
+            mimeType: asset.mimeType,
+            size: asset.size,
+            publicUrl: asset.publicUrl,
+          })),
+        );
+        const ingestedAssets = ingestResults.flatMap((result) => (
+          result.success && result.captureId
+            ? [{
+                fileName: result.asset.fileName,
+                publicUrl: result.asset.publicUrl,
+                mimeType: result.asset.mimeType,
+                size: result.asset.size,
+                captureId: result.captureId,
+              }]
+            : []
+        ));
+
+        if (ingestedAssets.length === 0) {
+          return NextResponse.json({
+            envelope: buildErrorEnvelope('素材入库失败'),
+          }, { status: 500 });
+        }
+
         return NextResponse.json({
           envelope: buildMediaReviewEnvelope({
             role: currentRole,
             message: originalMessage,
-            uploadedAssets: uploadedAssets.map((asset) => ({
-              fileName: asset.fileName,
-              publicUrl: asset.publicUrl,
-              mimeType: asset.mimeType,
-              size: asset.size,
-            })),
+            tripId,
+            uploadedAssets: ingestedAssets,
           }),
         });
       }
 
       if (intent === 'confirm_assets') {
-        const uploadedCount = Number(serverState?.uploaded_assets_count ?? toolResult.uploadedAssets?.length ?? 0);
+        const uploadedAssets = Array.isArray(serverState?.uploaded_assets)
+          ? serverState.uploaded_assets as Array<Record<string, unknown>>
+          : [];
+        const selectedAssets = uploadedAssets.filter((asset) => {
+          const captureId = typeof asset.captureId === 'string' ? asset.captureId : null;
+          if (!captureId) return true;
+          const decision = String(toolResult.payload[`assetDecision_${captureId}`] ?? '').trim();
+          return decision !== 'remove';
+        });
+        const selectedCaptureIds = selectedAssets
+          .map((asset) => (typeof asset.captureId === 'string' ? asset.captureId : null))
+          .filter((captureId): captureId is string => typeof captureId === 'string' && captureId.length > 0);
+        const uploadedCount = selectedAssets.length;
+
+        if (uploadedCount === 0) {
+          return NextResponse.json({
+            envelope: buildErrorEnvelope('至少需要保留一个素材后才能继续生成旅行记忆。'),
+          }, { status: 400 });
+        }
+
         return NextResponse.json({
           envelope: buildMemoryPrepEnvelope({
             role: currentRole,
             message: originalMessage,
+            tripId: typeof serverState?.trip_id === 'string' ? serverState.trip_id : null,
             uploadedAssetsCount: uploadedCount,
+            selectedCaptureIds,
           }),
         });
       }
 
       if (intent === 'generate_memory') {
-        const template = String(toolResult.payload.memoryTemplate ?? '').trim() || 'handbook';
+        const selectedTemplate = String(toolResult.payload.memoryTemplate ?? '').trim();
+        const template = selectedTemplate === 'poster' ? 'poster' : 'handbook';
         const uploadedCount = Number(serverState?.uploaded_assets_count ?? 0);
+        const tripId = typeof serverState?.trip_id === 'string' ? serverState.trip_id : null;
+        const selectedCaptureIds = Array.isArray(serverState?.selected_capture_ids)
+          ? serverState.selected_capture_ids.filter((captureId): captureId is string => typeof captureId === 'string' && captureId.length > 0)
+          : [];
+        const artifactTitle = template === 'poster'
+          ? '朋友圈海报'
+          : '手账长图';
+
+        if (!tripId) {
+          return NextResponse.json({
+            envelope: buildErrorEnvelope('当前缺少 trip_id，暂时无法生成真实旅行记忆。请重新确认行程后再试。'),
+          }, { status: 400 });
+        }
+
+        const result = await generateMemoryWithSelection(tripId, {
+          format: template,
+          captureIds: selectedCaptureIds,
+        });
 
         return NextResponse.json({
           envelope: buildMemoryResultEnvelope({
             role: currentRole,
             message: originalMessage,
+            tripId,
             uploadedAssetsCount: uploadedCount,
             template,
+            artifactId: result.id,
+            downloadUrl: result.url,
+            title: `${artifactTitle} · ${uploadedCount}个素材版`,
           }),
         });
       }
@@ -168,6 +262,19 @@ export async function POST(req: NextRequest) {
         const shareChannel = String(toolResult.payload.shareChannel ?? '').trim() || 'xhs';
         const shareTone = String(toolResult.payload.shareTone ?? '').trim() || 'healing';
         const memoryTitle = String(serverState?.memory_title ?? '旅行记忆草稿').trim() || '旅行记忆草稿';
+        const tripId = typeof serverState?.trip_id === 'string' ? serverState.trip_id : null;
+        const memoryArtifactId = typeof serverState?.memory_artifact_id === 'string' ? serverState.memory_artifact_id : undefined;
+
+        if (!tripId) {
+          return NextResponse.json({
+            envelope: buildErrorEnvelope('当前缺少 trip_id，暂时无法生成真实分享内容。请重新确认行程后再试。'),
+          }, { status: 400 });
+        }
+
+        const result = await generateShareWithArtifact(tripId, {
+          channel: shareChannel === 'moments' || shareChannel === 'weibo' || shareChannel === 'other' ? shareChannel : 'xhs',
+          memoryArtifactId,
+        });
 
         return NextResponse.json({
           envelope: buildShareResultEnvelope({
@@ -175,6 +282,12 @@ export async function POST(req: NextRequest) {
             channel: shareChannel,
             tone: shareTone,
             memoryTitle,
+            memoryArtifactId,
+            packageId: result.id,
+            title: result.title,
+            body: result.body,
+            hashtags: result.hashtags,
+            copyableText: result.copyableText,
           }),
         });
       }

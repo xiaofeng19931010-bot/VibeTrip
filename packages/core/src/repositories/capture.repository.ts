@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { getGlobalSupabaseClient } from '../supabase/index.js';
-import type { Capture, CaptureType, GeoPoint } from '../schemas/index.js';
+import type { Capture, CaptureMetadata, CaptureType, GeoPoint } from '../schemas/index.js';
 
 export interface CreateCaptureInput {
   trip_id: string;
@@ -8,7 +8,7 @@ export interface CreateCaptureInput {
   content: string;
   location?: GeoPoint;
   timestamp?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: CaptureMetadata;
 }
 
 export class CaptureRepository {

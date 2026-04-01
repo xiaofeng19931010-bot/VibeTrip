@@ -152,6 +152,22 @@ Import photos, voice notes, or GPX files.
 }
 ```
 
+> `captures.metadata` 当前采用显式结构：至少记录 `source`，并按不同 ingest 场景补充 `bucket/path/fileName/mimeType/size/publicUrl` 或 `originalPath/filename/storagePath/hasTranscription/pointCount/startTime/endTime` 等上下文。
+>
+> 当前 `ingest_media` 与 Web 上传后的素材入库已共享底层 capture 持久化能力，避免不同入口各自维护独立写库规则。
+>
+> `ingest_media` 现在代表“通用素材导入”语义，不依赖 capture session；若是自动采集或会话中上报的位置/素材，应走 capture session 相关入口。
+
+**Response:**
+```typescript
+{
+  content: [{
+    type: "text",
+    text: "{\"success\":true,\"captureId\":\"capture-uuid\"}"
+  }]
+}
+```
+
 ---
 
 ### generate_memory
@@ -171,10 +187,12 @@ Generate travel memory (handbook or poster).
 {
   content: [{
     type: "text",
-    text: "Memory generated for trip xxx in format: handbook. File saved to storage."
+    text: "{\"id\":\"artifact-uuid\",\"url\":\"https://storage.example/memories/...\",\"title\":\"成都旅行手账\",\"format\":\"handbook\"}"
   }]
 }
 ```
+
+> `generate_memory` 的持久化结果会把 `format`、`generatedAt`、`contentType`、`bucket`、`captureIds`、`captureCount`、`destination`、`role` 等上下文写入 `memory_artifacts.metadata`，便于后续追溯记忆产物来源。
 
 ---
 
@@ -187,6 +205,7 @@ Generate share content for social media.
 {
   trip_id: string;
   channel: "xhs" | "moments" | "weibo" | "other";
+  memory_artifact_id?: string;
 }
 ```
 
@@ -195,10 +214,14 @@ Generate share content for social media.
 {
   content: [{
     type: "text",
-    text: "Share content generated for trip xxx targeting xhs."
+    text: "{\"id\":\"package-uuid\",\"title\":\"成都旅行手账分享版\",\"body\":\"...\",\"hashtags\":[\"#成都\"],\"images\":[\"https://...\"],\"memoryArtifactId\":\"artifact-uuid\",\"copyableText\":\"标题\\n\\n正文\\n\\n#标签\"}"
   }]
 }
 ```
+
+> 当前 MCP 返回的是可 JSON 解析的文本内容，便于 CLI、Agent Runtime 和 Web Renderer 统一消费，而不是仅返回描述性字符串。
+>
+> `generate_share` 的持久化结果会把 `memoryArtifactId`、`memoryArtifactTitle`、`memoryArtifactUrl`、`style` 等上下文写入 `share_packages.metadata`，便于后续追溯分享内容包来源。
 
 ## Role Types
 

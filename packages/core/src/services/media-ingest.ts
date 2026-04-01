@@ -2,7 +2,7 @@ import { readFile } from 'fs/promises';
 import { stat } from 'fs/promises';
 import { captureRepository } from '../repositories/capture.repository.js';
 import { storageService } from './storage.js';
-import type { CaptureType, GeoPoint } from '../schemas/index.js';
+import type { Capture, CaptureMetadata, CaptureType, GeoPoint } from '../schemas/index.js';
 
 export interface MediaMetadata {
   filename: string;
@@ -17,6 +17,100 @@ export interface IngestResult {
   captureId?: string;
   metadata?: MediaMetadata;
   error?: string;
+}
+
+export interface UploadedAssetInput {
+  bucket: string;
+  path: string;
+  fileName: string;
+  mimeType?: string;
+  size?: number;
+  publicUrl?: string;
+}
+
+export interface PersistCaptureInput {
+  tripId: string;
+  type: CaptureType;
+  content: string;
+  location?: GeoPoint;
+  timestamp?: string;
+  metadata?: CaptureMetadata;
+}
+
+export async function persistCapture(input: PersistCaptureInput): Promise<Capture> {
+  return captureRepository.create({
+    trip_id: input.tripId,
+    type: input.type,
+    content: input.content,
+    location: input.location,
+    timestamp: input.timestamp,
+    metadata: input.metadata,
+  });
+}
+
+function buildUploadedAssetMetadata(asset: UploadedAssetInput): CaptureMetadata {
+  return {
+    source: 'web_upload',
+    bucket: asset.bucket,
+    path: asset.path,
+    fileName: asset.fileName,
+    mimeType: asset.mimeType,
+    size: asset.size,
+    publicUrl: asset.publicUrl,
+  };
+}
+
+function inferCaptureTypeFromUploadedAsset(asset: UploadedAssetInput): CaptureType {
+  const mimeType = asset.mimeType?.toLowerCase() ?? '';
+  const fileName = asset.fileName.toLowerCase();
+
+  if (mimeType.startsWith('image/')) return 'photo';
+  if (mimeType.startsWith('audio/')) return 'voice';
+  if (mimeType === 'application/gpx+xml' || fileName.endsWith('.gpx')) return 'gpx';
+  return 'note';
+}
+
+export async function ingestUploadedAssets(
+  tripId: string,
+  assets: UploadedAssetInput[],
+): Promise<Array<IngestResult & { asset: UploadedAssetInput; captureType?: CaptureType }>> {
+  const results: Array<IngestResult & { asset: UploadedAssetInput; captureType?: CaptureType }> = [];
+
+  for (const asset of assets) {
+    try {
+      const captureType = inferCaptureTypeFromUploadedAsset(asset);
+      const timestamp = new Date().toISOString();
+      const capture = await persistCapture({
+        tripId,
+        type: captureType,
+        content: asset.publicUrl || `storage://${asset.bucket}/${asset.path}`,
+        timestamp,
+        metadata: buildUploadedAssetMetadata(asset),
+      });
+
+      results.push({
+        success: true,
+        captureId: capture.id,
+        captureType,
+        asset,
+        metadata: {
+          filename: asset.fileName,
+          size: asset.size ?? 0,
+          mimeType: asset.mimeType ?? 'application/octet-stream',
+          capturedAt: timestamp,
+        },
+      });
+    } catch (error) {
+      results.push({
+        success: false,
+        asset,
+        captureType: inferCaptureTypeFromUploadedAsset(asset),
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  return results;
 }
 
 export async function ingestPhoto(
@@ -43,13 +137,14 @@ export async function ingestPhoto(
       contentType: mimeTypes[ext] || 'image/jpeg',
     }, fileBuffer);
 
-    const capture = await captureRepository.create({
-      trip_id: tripId,
+    const capture = await persistCapture({
+      tripId,
       type: 'photo',
       content: uploaded.url,
       location: metadata?.location,
       timestamp: metadata?.capturedAt,
       metadata: {
+        source: 'cli_upload',
         originalPath: filePath,
         filename: metadata?.filename || filePath.split('/').pop(),
         size: fileStats.size,
@@ -92,13 +187,14 @@ export async function ingestVoice(
       contentType: 'audio/mp4',
     }, fileBuffer);
 
-    const capture = await captureRepository.create({
-      trip_id: tripId,
+    const capture = await persistCapture({
+      tripId,
       type: 'voice',
       content: transcription || `Voice note: ${uploaded.url}`,
       location: metadata?.location,
       timestamp: metadata?.capturedAt,
       metadata: {
+        source: 'cli_upload',
         originalPath: filePath,
         filename: metadata?.filename || 'voice note',
         size: fileStats.size,
@@ -132,13 +228,14 @@ export async function ingestNote(
   metadata?: Partial<MediaMetadata>
 ): Promise<IngestResult> {
   try {
-    const capture = await captureRepository.create({
-      trip_id: tripId,
+    const capture = await persistCapture({
+      tripId,
       type: 'note',
       content,
       location: metadata?.location,
       timestamp: metadata?.capturedAt || new Date().toISOString(),
       metadata: {
+        source: 'manual',
         filename: metadata?.filename || 'text note',
       },
     });
@@ -183,13 +280,14 @@ export async function ingestGPX(
       contentType: 'application/gpx+xml',
     }, fileBuffer);
 
-    const capture = await captureRepository.create({
-      trip_id: tripId,
+    const capture = await persistCapture({
+      tripId,
       type: 'gpx',
       content: uploaded.url,
       location: points[0],
       timestamp: metadata?.capturedAt || gpxData[0]?.time || new Date().toISOString(),
       metadata: {
+        source: 'cli_upload',
         originalPath: filePath,
         filename: metadata?.filename || filePath.split('/').pop(),
         storagePath: uploaded.path,
@@ -298,10 +396,12 @@ export async function bulkIngestMedia(
 }
 
 export const mediaIngestService = {
+  persistCapture,
   ingestPhoto,
   ingestVoice,
   ingestNote,
   ingestGPX,
+  ingestUploadedAssets,
   bulkIngestMedia,
   ingest: async (filePath: string, options: { tripId?: string; type?: 'photo' | 'voice' | 'note' | 'gpx' }) => {
     const tripId = options.tripId || 'default';

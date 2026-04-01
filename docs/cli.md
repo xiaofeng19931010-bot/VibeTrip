@@ -151,6 +151,8 @@ vibetrip media ingest track.gpx --trip 550e8400-e29b-41d4-a716-446655440000 --ty
 vibetrip media ingest voice.m4a --trip 550e8400-e29b-41d4-a716-446655440000 --type voice
 ```
 
+> `vibetrip media ingest` 当前代表“通用素材导入”语义，不依赖 capture session；若后续补充自动采集能力，应与 session-aware 入口分开。
+
 ---
 
 ### memory
@@ -181,6 +183,13 @@ vibetrip memory generate 550e8400-e29b-41d4-a716-446655440000
 vibetrip memory generate 550e8400-e29b-41d4-a716-446655440000 --format poster
 ```
 
+**Output:**
+
+- 输出 `Artifact ID`
+- 如已成功上传到存储，额外输出可访问的 `URL`
+- Core 返回值中还包含 `format` 与生成标题，可供后续 CLI 扩展为更完整的摘要输出
+- 持久化到 `memory_artifacts` 的 metadata 会记录 `captureIds/captureCount/bucket/contentType/destination/role` 等上下文，便于后续做产物追踪
+
 ---
 
 ### share
@@ -199,6 +208,7 @@ Arguments:
 
 Options:
   -c, --channel <channel>  Channel: xhs, moments, weibo, other (default: xhs)
+  -a, --artifact <artifactId>  Optional memory artifact ID used as share context
 ```
 
 **Examples:**
@@ -212,7 +222,15 @@ vibetrip share generate 550e8400-e29b-41d4-a716-446655440000 --channel moments
 
 # Generate for 微博
 vibetrip share generate 550e8400-e29b-41d4-a716-446655440000 --channel weibo
+
+# Generate share content based on a specific memory artifact
+vibetrip share generate 550e8400-e29b-41d4-a716-446655440000 --channel xhs --artifact artifact-uuid
 ```
+
+**Output:**
+
+- 输出 `Package ID`
+- 输出可直接复制发布的 `copyable content`
 
 ---
 

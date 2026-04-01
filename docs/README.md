@@ -124,6 +124,8 @@ if (result.success) {
 | `generate_memory` | Generate travel memory |
 | `generate_share` | Generate social media content |
 
+> `generate_memory` 当前返回 `{ id, url, title, format }`；`generate_share` 当前返回 `{ id, title, body, hashtags, images, memoryArtifactId, copyableText }`。MCP 与 CLI 共用这组结构化结果，便于后续接入 Web A2UI Runtime。
+
 ### Usage
 
 ```typescript
@@ -167,6 +169,24 @@ vibetrip memory generate <trip_id> --format handbook
 # Share
 vibetrip share generate <trip_id> --channel xhs
 ```
+
+## Memory / Share Persistence
+
+- `memory_artifacts` 以 `trip_id` 为主关联键，存储 `type/title/storage_url/file_path/metadata/status`
+- `share_packages` 以 `trip_id` 为主关联键，存储 `channel/title/content/hashtags/images/metadata`
+- 当前实现不在这两张表重复存 `user_id`，统一通过 `trip -> user_id` 追溯归属，降低单体维护复杂度
+- `memory_artifacts.metadata` 当前采用显式结构，至少包含 `tripId/format/generatedAt/contentType/bucket/captureIds/captureCount/destination/role`
+- 当已存在 `memory_artifact_id` 时，分享生成会显式记录它与 `share_packages` 的关联上下文，保证记忆产物与分享内容包可追溯
+- `share_packages.metadata` 当前采用显式结构，至少包含 `tripId/channel/style/generatedAt`，并在适用时补充 `memoryArtifactId/memoryArtifactTitle/memoryArtifactUrl`
+
+## Upload / Capture Persistence
+
+- Web 上传接口先将文件写入 Supabase Storage，并回传 `uploadedAssets`
+- Chat Runtime 在 `submit_media` 阶段继续把这些资产写入真实 `captures` 记录
+- `captures.metadata` 当前采用显式结构，至少包含 `source`，并按来源补充 `bucket/path/fileName/mimeType/size/publicUrl` 或 `originalPath/filename/storagePath/hasTranscription/pointCount/startTime/endTime`
+- Web 上传、CLI 导入、MCP `ingest_media` 与 Capture Session 当前共享底层 capture 持久化能力，减少多入口写库规则漂移
+- 素材确认阶段允许用户按 `captureId` 保留或剔除素材，并把结果透传为 `selected_capture_ids`
+- 后续 `generate_memory` 直接读取 `captures`，确保本轮 Web 上传素材进入真实记忆生成链路
 
 ## Web
 

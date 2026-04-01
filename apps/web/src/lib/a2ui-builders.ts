@@ -334,18 +334,20 @@ export function buildMediaUploadEnvelope(params: {
 export function buildMediaReviewEnvelope(params: {
   role: RoleType;
   message: string;
+  tripId?: string | null;
   uploadedAssets: Array<{
     fileName: string;
     publicUrl?: string;
     mimeType?: string;
     size?: number;
+    captureId?: string;
   }>;
 }): A2UIEnvelope {
   const children: NonNullable<A2UIEnvelope['view']['children']> = [
     {
       type: 'message',
       props: {
-        content: '素材已上传，我先帮你确认一下要继续用于旅行记忆生成的内容。',
+        content: '素材已上传并写入旅行记录，我先帮你确认一下要继续用于旅行记忆生成的内容。',
       },
     },
     {
@@ -354,10 +356,27 @@ export function buildMediaReviewEnvelope(params: {
         type: 'card',
         props: {
           title: asset.fileName || `素材 ${index + 1}`,
-          description: asset.publicUrl
-            ? `已上传 · ${asset.mimeType ?? '未知类型'}`
-            : '已上传素材',
+          description: asset.captureId
+            ? `已入库 · ${asset.mimeType ?? '未知类型'} · Capture ID ${asset.captureId}`
+            : asset.publicUrl
+              ? `已上传 · ${asset.mimeType ?? '未知类型'}`
+              : '已上传素材',
         },
+        children: asset.captureId
+          ? [
+              {
+                type: 'select',
+                props: {
+                  name: `assetDecision_${asset.captureId}`,
+                  label: '这份素材是否保留用于旅行记忆？',
+                  options: [
+                    { label: '保留', value: 'keep' },
+                    { label: '移除', value: 'remove' },
+                  ],
+                },
+              },
+            ]
+          : undefined,
       })),
     },
     {
@@ -376,7 +395,12 @@ export function buildMediaReviewEnvelope(params: {
       step: 'review-media',
       original_message: params.message,
       role: params.role,
+      trip_id: params.tripId ?? null,
       uploaded_assets_count: params.uploadedAssets.length,
+      capture_ids: params.uploadedAssets
+        .map((asset) => asset.captureId)
+        .filter((captureId): captureId is string => typeof captureId === 'string' && captureId.length > 0),
+      uploaded_assets: params.uploadedAssets,
     },
     client_state: {
       role: params.role,
@@ -404,7 +428,9 @@ export function buildMediaReviewEnvelope(params: {
 export function buildMemoryPrepEnvelope(params: {
   role: RoleType;
   message: string;
+  tripId?: string | null;
   uploadedAssetsCount: number;
+  selectedCaptureIds?: string[];
 }): A2UIEnvelope {
   return {
     version: '1.0',
@@ -414,7 +440,9 @@ export function buildMemoryPrepEnvelope(params: {
       step: 'prepare-memory',
       original_message: params.message,
       role: params.role,
+      trip_id: params.tripId ?? null,
       uploaded_assets_count: params.uploadedAssetsCount,
+      selected_capture_ids: params.selectedCaptureIds ?? [],
     },
     client_state: {
       role: params.role,
@@ -425,14 +453,14 @@ export function buildMemoryPrepEnvelope(params: {
         {
           type: 'message',
           props: {
-            content: `已确认 ${params.uploadedAssetsCount} 个素材，接下来选择旅行记忆模板，我就开始生成。`,
+            content: `已确认 ${params.uploadedAssetsCount} 个保留素材，接下来选择旅行记忆模板，我就开始生成。`,
           },
         },
         {
           type: 'card',
           props: {
             title: '选择旅行记忆模板',
-            description: 'MVP 先生成图文手账/长图，后续再扩展视频版本。',
+            description: 'MVP 当前支持手账长图与朋友圈海报；旅行摘要卡先复用手账生成链路。',
           },
           children: [
             {
@@ -443,7 +471,7 @@ export function buildMemoryPrepEnvelope(params: {
                 options: [
                   { label: '手账长图', value: 'handbook' },
                   { label: '朋友圈海报', value: 'poster' },
-                  { label: '旅行摘要卡', value: 'summary' },
+                  { label: '旅行摘要卡（先按手账生成）', value: 'summary' },
                 ],
               },
             },
@@ -476,12 +504,16 @@ export function buildMemoryPrepEnvelope(params: {
 export function buildMemoryResultEnvelope(params: {
   role: RoleType;
   message: string;
+  tripId?: string | null;
   uploadedAssetsCount: number;
   template: string;
+  artifactId?: string;
+  downloadUrl?: string;
+  title?: string;
 }): A2UIEnvelope {
   const templateLabel = getMemoryTemplateLabel(params.template);
-  const memoryTitle = `${templateLabel} · ${params.uploadedAssetsCount}个素材版`;
-  const artifactId = randomUUID();
+  const memoryTitle = params.title || `${templateLabel} · ${params.uploadedAssetsCount}个素材版`;
+  const artifactId = params.artifactId || randomUUID();
 
   return {
     version: '1.0',
@@ -491,10 +523,12 @@ export function buildMemoryResultEnvelope(params: {
       step: 'memory-generated',
       original_message: params.message,
       role: params.role,
+      trip_id: params.tripId ?? null,
       uploaded_assets_count: params.uploadedAssetsCount,
       memory_template: params.template,
       memory_artifact_id: artifactId,
       memory_title: memoryTitle,
+      memory_download_url: params.downloadUrl ?? null,
     },
     client_state: {
       role: params.role,
@@ -512,7 +546,9 @@ export function buildMemoryResultEnvelope(params: {
           type: 'card',
           props: {
             title: '旅行记忆草稿',
-            description: `已基于 ${params.uploadedAssetsCount} 个素材生成「${templateLabel}」版本，当前先以可分享草稿形式返回，后续再接入正式产物落库与下载链接。`,
+            description: params.downloadUrl
+              ? `已基于 ${params.uploadedAssetsCount} 个素材生成「${templateLabel}」版本，当前已接入真实产物落库与下载地址。`
+              : `已基于 ${params.uploadedAssetsCount} 个素材生成「${templateLabel}」版本，当前先以可分享草稿形式返回。`,
           },
           children: [
             {
@@ -527,6 +563,22 @@ export function buildMemoryResultEnvelope(params: {
                 content: `适配角色：${params.role} · 建议下一步确认分享渠道与文案调性。`,
               },
             },
+            {
+              type: 'message',
+              props: {
+                content: `Artifact ID：${artifactId}`,
+              },
+            },
+            ...(params.downloadUrl
+              ? [
+                  {
+                    type: 'message' as const,
+                    props: {
+                      content: `下载地址：${params.downloadUrl}`,
+                    },
+                  },
+                ]
+              : []),
           ],
         },
         {
@@ -590,10 +642,22 @@ export function buildShareResultEnvelope(params: {
   channel: string;
   tone: string;
   memoryTitle: string;
+  memoryArtifactId?: string;
+  packageId?: string;
+  title?: string;
+  body?: string;
+  hashtags?: string[];
+  copyableText?: string;
 }): A2UIEnvelope {
   const channelLabel = getShareChannelLabel(params.channel);
   const toneLabel = getShareToneLabel(params.tone);
-  const copy = buildShareCopy(params);
+  const copy = params.title && params.body
+    ? {
+        title: params.title,
+        body: params.body,
+        tags: (params.hashtags ?? []).join(' '),
+      }
+    : buildShareCopy(params);
 
   return {
     version: '1.0',
@@ -622,7 +686,7 @@ export function buildShareResultEnvelope(params: {
           type: 'card',
           props: {
             title: '分享文案预览',
-            description: `适配渠道：${channelLabel} · 文案风格：${toneLabel}`,
+            description: `适配渠道：${channelLabel} · 文案风格：${toneLabel}${params.packageId ? ` · Package ID：${params.packageId}` : ''}`,
           },
           children: [
             {
@@ -643,13 +707,23 @@ export function buildShareResultEnvelope(params: {
                 content: `标签：${copy.tags}`,
               },
             },
+            ...(params.copyableText
+              ? [
+                  {
+                    type: 'message' as const,
+                    props: {
+                      content: `可复制内容：${params.copyableText}`,
+                    },
+                  },
+                ]
+              : []),
           ],
         },
         {
           type: 'card',
           props: {
             title: '内容包说明',
-            description: `已基于「${params.memoryTitle}」整理分享标题、正文和标签草稿。下一步可补充封面渲染、长图链接与一键复制能力。`,
+            description: `已基于「${params.memoryTitle}」${params.memoryArtifactId ? `（Artifact ID：${params.memoryArtifactId}）` : ''}整理分享标题、正文和标签草稿。下一步可补充封面渲染、长图链接与一键复制能力。`,
           },
         },
       ],

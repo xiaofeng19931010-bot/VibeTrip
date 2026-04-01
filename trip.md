@@ -80,8 +80,8 @@
 
 |任务 ID|任务名（轻松版）|目标|AI 能帮你做啥|交付物|工期|负责人|
 |---|---|---|---|---|---|---|
-|V3.1|自动生成旅行记忆|**核心功能3**：结合轨迹/照片与 BGM 推荐，在用户确认素材与模板后生成角色化手账（MVP 先图文），并先返回可继续分享的记忆结果卡片|AI 自动生成排版算法、角色化模板、生成前确认卡片与结果卡片|专属旅行记忆（手账/长图）|3 天|你（AI辅助）|
-|V3.2|一键网感分享|**核心功能4**：一键生成小红书/朋友圈分享海报及网感文案，且必须先经过分享渠道与文案调性的前置确认|AI 自动生成社媒模板、渠道选择卡片与长图渲染|一键分享组件与精美海报|2 天|你（AI辅助）|
+|V3.1|自动生成旅行记忆|**核心功能3**：结合轨迹/照片与 BGM 推荐，在用户确认素材与模板后生成角色化手账（MVP 先图文），并先返回可继续分享的记忆结果卡片；`summary` 模板在 MVP 阶段可先复用手账生成链路|AI 自动生成排版算法、角色化模板、生成前确认卡片与结果卡片|专属旅行记忆（手账/长图）|3 天|你（AI辅助）|
+|V3.2|一键网感分享|**核心功能4**：一键生成小红书/朋友圈分享海报及网感文案，且必须先经过分享渠道与文案调性的前置确认，并显式关联当前轮生成的旅行记忆 artifact|AI 自动生成社媒模板、渠道选择卡片与长图渲染|一键分享组件与精美海报|2 天|你（AI辅助）|
 |V3.3|测试与修复|把全流程测一遍，核心跑通|AI 自动写测试用例、定位并修复 Bug|测试报告、Bug 修完|3 天|你（AI辅助）|
 |V3.4|灰度发版体验|给 100 个核心用户试用，收集反馈并做微调|AI 自动分析反馈，提炼优化点并改代码|灰度版本及优化代码|3 天|你（AI辅助）|
 |V3.5|全量上线与开放|正式发版，配置小运营活动，**发布 MCP Server 公开地址**|AI 自动写上线公告、开发者对接文档|上线版本、MCP开放文档|3 天|你（AI辅助）|
@@ -96,7 +96,9 @@
 
 > A2UI 协议草案见：[a2ui-protocol.md](file:///Users/liam/trip/a2ui-protocol.md)
 
-> 当前最小可运行闭环已推进到：`一句话规划 → 澄清/预算调整 → 行程确认 → 素材上传 → 素材确认 → 记忆模板确认 → 旅行记忆结果卡片 → 分享渠道/文案调性确认 → 分享内容包预览`
+> 当前最小可运行闭环已推进到：`一句话规划 → 澄清/预算调整 → 行程确认 → 素材上传 → 写入真实 captures 记录 → 素材确认（保留/剔除） → 记忆模板确认 → 调用真实 Memory Service 生成 artifact → 旅行记忆结果卡片 → 分享渠道/文案调性确认 → 调用真实 Share Service 生成内容包 → 分享内容包预览`
+
+> 当前阶段的工程重点补齐为：统一 `captures` / `memory_artifacts` / `share_packages` 的数据库迁移、Schema、Repository 与开发者文档合同；其中 `captures.metadata` 需显式沉淀 `source / bucket / path / fileName / mimeType / size / publicUrl / originalPath / filename / storagePath / hasTranscription / pointCount / startTime / endTime`，`memory_artifacts.metadata` 需显式沉淀 `format / generatedAt / contentType / bucket / captureIds / captureCount / destination / role`，`share_packages.metadata` 需显式沉淀 `memoryArtifactId / memoryArtifactTitle / memoryArtifactUrl / style`，并进一步将 Web/CLI/MCP 的素材入库统一收敛到单一领域入口；其中 MCP/CLI 走“通用导入”，Capture Session 走“会话内采集”，边界需明确，确保上传素材、记忆产物与分享内容包都可追溯。
 
 ---
 

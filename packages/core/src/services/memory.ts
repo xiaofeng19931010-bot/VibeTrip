@@ -1,4 +1,4 @@
-import type { RoleType, MemoryArtifactType } from '../schemas/index.js';
+import type { RoleType, MemoryArtifactMetadata, MemoryArtifactType } from '../schemas/index.js';
 import { tripRepository } from '../repositories/trip.repository.js';
 import { itineraryRepository } from '../repositories/itinerary.repository.js';
 import { captureRepository } from '../repositories/capture.repository.js';
@@ -9,6 +9,16 @@ export interface MemoryGenerationOptions {
   tripId: string;
   format: MemoryArtifactType;
   title?: string;
+  captureIds?: string[];
+}
+
+function filterCapturesBySelection<T extends { id: string }>(items: T[], captureIds?: string[]) {
+  if (!captureIds || captureIds.length === 0) {
+    return items;
+  }
+
+  const allowedIds = new Set(captureIds);
+  return items.filter((item) => allowedIds.has(item.id));
 }
 
 export interface HandbookContent {
@@ -41,6 +51,35 @@ export interface PosterContent {
   quote?: string;
 }
 
+async function buildMemoryArtifactMetadata(
+  options: MemoryGenerationOptions,
+  contentType: 'markdown' | 'text',
+): Promise<MemoryArtifactMetadata> {
+  const trip = await tripRepository.findById(options.tripId);
+
+  if (!trip) {
+    throw new Error(`Trip not found: ${options.tripId}`);
+  }
+
+  const selectedCaptures = filterCapturesBySelection(
+    await captureRepository.findByTripId(options.tripId),
+    options.captureIds,
+  );
+  const bucket = options.format === 'handbook' ? 'memories' : 'posters';
+
+  return {
+    tripId: trip.id,
+    format: options.format,
+    generatedAt: new Date().toISOString(),
+    contentType,
+    bucket,
+    captureIds: selectedCaptures.map((capture) => capture.id),
+    captureCount: selectedCaptures.length,
+    destination: trip.destination,
+    role: trip.role,
+  };
+}
+
 export const ROLE_DISPLAY_NAMES: Record<RoleType, string> = {
   parents: '带父母出行',
   family: '亲子时光',
@@ -57,7 +96,10 @@ export async function generateHandbook(options: MemoryGenerationOptions): Promis
   }
 
   const itineraries = await itineraryRepository.findByTripId(options.tripId);
-  const captures = await captureRepository.findByTripId(options.tripId);
+  const captures = filterCapturesBySelection(
+    await captureRepository.findByTripId(options.tripId),
+    options.captureIds,
+  );
 
   const dailyMemories: DailyMemory[] = [];
 
@@ -107,7 +149,10 @@ export async function generatePoster(options: MemoryGenerationOptions): Promise<
     throw new Error(`Trip not found: ${options.tripId}`);
   }
 
-  const captures = await captureRepository.findByTripId(options.tripId);
+  const captures = filterCapturesBySelection(
+    await captureRepository.findByTripId(options.tripId),
+    options.captureIds,
+  );
   const photos = captures.filter(c => c.type === 'photo').map(c => c.content);
 
   const startDate = new Date(trip.start_date);
@@ -190,15 +235,17 @@ export async function saveMemoryArtifact(
   content: string,
   contentType: 'markdown' | 'text'
 ): Promise<string> {
+  const metadata = await buildMemoryArtifactMetadata(options, contentType);
   const artifact = await memoryArtifactRepository.create({
     trip_id: options.tripId,
     type: options.format,
     title: options.title || `${options.format} memory`,
     description: `${options.format} generated at ${new Date().toISOString()}`,
+    metadata,
   });
 
   const ext = contentType === 'markdown' ? 'md' : 'txt';
-  const bucket = options.format === 'handbook' ? 'memories' : 'posters';
+  const bucket = metadata.bucket;
 
   const uploaded = await storageService.upload({
     bucket,
@@ -234,15 +281,18 @@ export async function generateAndSaveMemory(options: MemoryGenerationOptions): P
     contentType = 'text';
   }
 
+  const metadata = await buildMemoryArtifactMetadata(options, contentType);
+
   const artifact = await memoryArtifactRepository.create({
     trip_id: options.tripId,
     type: options.format,
     title: options.title || `${content.destination}旅行记忆`,
     description: `${options.format} generated`,
+    metadata,
   });
 
   const ext = contentType === 'markdown' ? 'md' : 'txt';
-  const bucket = options.format === 'handbook' ? 'memories' : 'posters';
+  const bucket = metadata.bucket;
 
   const uploaded = await storageService.upload({
     bucket,
@@ -270,9 +320,14 @@ export const memoryService = {
   formatPosterAsText,
   saveMemoryArtifact,
   generateAndSaveMemory,
-  generateMemory: async (tripId: string, options: { format?: 'handbook' | 'poster' }) => {
+  generateMemory: async (tripId: string, options: { format?: 'handbook' | 'poster'; captureIds?: string[] }) => {
     const format = options.format || 'handbook';
-    const result = await generateAndSaveMemory({ tripId, format });
-    return { id: result.artifactId, url: result.url };
+    const result = await generateAndSaveMemory({ tripId, format, captureIds: options.captureIds });
+    return {
+      id: result.artifactId,
+      url: result.url,
+      title: 'title' in result.content ? result.content.title : `${format} memory`,
+      format,
+    };
   },
 };

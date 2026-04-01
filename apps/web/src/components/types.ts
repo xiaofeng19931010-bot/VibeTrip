@@ -47,6 +47,7 @@ export interface UploadedAsset {
   mimeType?: string;
   size?: number;
   publicUrl?: string;
+  captureId?: string;
 }
 
 export interface A2UIToolCall {

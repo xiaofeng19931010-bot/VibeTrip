@@ -1,5 +1,6 @@
-import type { CaptureType, GeoPoint } from '../schemas/index.js';
+import type { CaptureMetadata, CaptureType, GeoPoint } from '../schemas/index.js';
 import { captureRepository } from '../repositories/capture.repository.js';
+import { persistCapture } from './media-ingest.js';
 
 export interface CaptureStrategy {
   lowPowerMode: boolean;
@@ -30,7 +31,7 @@ export interface CaptureOptions {
   content: string;
   location?: GeoPoint;
   timestamp?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: CaptureMetadata;
 }
 
 const DEFAULT_STRATEGY: CaptureStrategy = {
@@ -111,38 +112,68 @@ export async function recordLocation(
   session.locationPoints.push(location);
   session.lastCaptureAt = now;
 
-  await captureRepository.create({
-    trip_id: tripId,
+  await persistCapture({
+    tripId,
     type: 'gpx',
     content: JSON.stringify({ lat: location.lat, lng: location.lng }),
     location,
     timestamp: now,
-    metadata: { captureType: 'location' },
+    metadata: { source: 'capture_session', captureType: 'location' },
   });
 }
 
 export async function ingestMedia(
   tripId: string,
   options: CaptureOptions
-): Promise<void> {
+): Promise<{ success: boolean; captureId?: string; reason?: string }> {
   const session = sessions.get(tripId);
 
   if (!session || !session.isActive) {
-    return;
+    return { success: false, reason: 'capture_session_inactive' };
   }
 
   const timestamp = options.timestamp || new Date().toISOString();
 
-  await captureRepository.create({
-    trip_id: tripId,
+  const capture = await persistCapture({
+    tripId,
     type: options.type,
     content: options.content,
     location: options.location,
     timestamp,
-    metadata: options.metadata,
+    metadata: {
+      source: 'capture_session',
+      ...options.metadata,
+    },
   });
 
   session.lastCaptureAt = timestamp;
+  return { success: true, captureId: capture.id };
+}
+
+export async function ingestMediaInSession(
+  tripId: string,
+  options: CaptureOptions
+): Promise<{ success: boolean; captureId?: string; reason?: string }> {
+  return ingestMedia(tripId, options);
+}
+
+export async function importCapture(
+  tripId: string,
+  options: CaptureOptions
+): Promise<{ success: boolean; captureId: string }> {
+  const capture = await persistCapture({
+    tripId,
+    type: options.type,
+    content: options.content,
+    location: options.location,
+    timestamp: options.timestamp,
+    metadata: {
+      source: options.metadata?.source ?? 'manual',
+      ...options.metadata,
+    },
+  });
+
+  return { success: true, captureId: capture.id };
 }
 
 export async function getTripCaptures(tripId: string): Promise<{
@@ -195,6 +226,8 @@ export const captureService = {
   isCaptureActive,
   recordLocation,
   ingestMedia,
+  ingestMediaInSession,
+  importCapture,
   getTripCaptures,
   startCapture: async (tripId: string) => {
     const session = startCaptureSession(tripId);

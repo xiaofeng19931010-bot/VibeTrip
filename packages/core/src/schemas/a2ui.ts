@@ -61,6 +61,15 @@ export const A2UIToolResultSchema = z.object({
   submitted_at: z.string().datetime().optional(),
   payload: z.record(z.unknown()).default({}),
   client_state: A2UIStateSchema.optional(),
+  uploadedAssets: z.array(z.object({
+    bucket: z.string().min(1),
+    path: z.string().min(1),
+    fileName: z.string().min(1),
+    mimeType: z.string().optional(),
+    size: z.number().optional(),
+    publicUrl: z.string().url().optional(),
+    captureId: z.string().uuid().optional(),
+  })).optional(),
 });
 export type A2UIToolResult = z.infer<typeof A2UIToolResultSchema>;
 

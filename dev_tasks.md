@@ -269,10 +269,17 @@
   - 照片：提取 EXIF 时间/地理位置（如有），建立与 Trip 的关联。
   - 语音：转写（可选）、时间戳与摘要。
   - 笔记：结构化存储（markdown/plain）。
+  - 合同收敛：`captures.metadata` 必须与 Zod schema、Supabase generated types、Repository 入参保持一致，至少显式定义 `source/bucket/path/fileName/mimeType/size/publicUrl/originalPath/filename/storagePath/hasTranscription/pointCount/startTime/endTime`。
+  - 入口收敛：Web 上传、CLI 媒体导入、MCP `ingest_media`、Capture Session 写入都应尽量复用单一的 capture 持久化领域入口，避免多处直接 `captureRepository.create(...)` 造成规则漂移。
+  - 语义拆分：MCP/CLI 的素材导入应走通用导入入口，不依赖 capture session；仅“自动采集/会话内上报”才走 session-aware 入口。
   - Web 端上传链路必须采用“受控上传接口 → `uploadedAssets` 回传 → 素材确认卡片”闭环，不允许上传完成后直接跳过确认阶段。
+  - Web Chat Runtime 在 `submit_media` 后必须把上传资产写入真实 `captures` 持久化层，并把 `captureId` 透传到后续素材确认阶段，禁止只有文件落存没有领域入库。
+  - 素材确认阶段必须支持“保留/剔除”选择，并把最终保留的 `captureId` 集合透传到记忆生成阶段。
 - 完成标准
   - `ingest_media` 返回素材引用 ID，可用于记忆生成。
   - 用户至少经历一次“上传素材 → 确认素材 → 继续生成”的完整 A2UI 交互闭环。
+  - `generate_memory` 读取到的素材必须包含本轮 Web 上传后真实入库的 captures，而不是历史残留数据。
+  - `generate_memory` 在存在 `selected_capture_ids` 时必须优先只消费用户确认保留的素材集合。
 
 ### D3.3 Capture：停留点识别算法
 
@@ -288,11 +295,13 @@
   - MVP 仅做图文：按天自动挑选“停留点+照片+一句话感受”。
   - 模板系统：按角色选择手账模板（亲子更活泼、情侣更浪漫、带父母更温和大字）。
   - 产物存储：使用 Supabase Storage（生成可下载 URL），并在 `artifacts` 表写入元数据。
-  - 生成前必须走一轮 A2UI 参数确认：至少包含模板选择（如 `handbook/poster/summary`），由用户确认后再进入生成。
+  - 合同收敛：`memory_artifacts` 必须与 Zod schema、Supabase generated types、Repository 入参保持一致，最小字段集为 `trip_id/type/title/storage_url/file_path/metadata/status`；其中 `metadata` 需显式定义 `tripId/format/generatedAt/contentType/bucket/captureIds/captureCount/destination/role`。
+  - 生成前必须走一轮 A2UI 参数确认：至少包含模板选择（如 `handbook/poster/summary`），由用户确认后再进入生成；其中 `summary` 可在 MVP 阶段先复用 `handbook` 生成链路。
   - 生成完成后必须先返回“旅行记忆结果卡片”，显式展示模板、素材数、草稿标题与下一步分享入口，禁止直接静默进入分享流程。
 - 完成标准
   - `generate_memory` 输出可下载的文件路径/URL + 元数据。
   - 用户可经历“确认素材 → 选择记忆模板 → 触发生成 → 查看记忆结果卡片”的连续交互链路。
+  - Web Chat Runtime 在存在 `trip_id` 时必须直连 Core `memoryService.generateMemory(...)`，而不是仅返回前端占位状态。
 
 ### D4.2 Share：一键分享（小红书/朋友圈）
 
@@ -300,10 +309,13 @@
   - 渠道模板：标题、正文结构、标签、emoji 风格开关。
   - 文案生成：基于 itinerary+captures+memory 产物，生成 2-3 版备选。
   - 素材打包：长图+封面+文案 JSON。
+  - 合同收敛：`share_packages` 必须与 Zod schema、Supabase generated types、Repository 入参保持一致，最小字段集为 `trip_id/channel/title/content/hashtags/images/metadata`；其中 `metadata` 需显式定义 `tripId/channel/style/generatedAt/memoryArtifactId/memoryArtifactTitle/memoryArtifactUrl`。
   - 分享前必须走一轮 A2UI 参数确认：至少包含渠道（如 `xhs/moments`）与文案调性（如 `healing/story/playful`）。
 - 完成标准
   - `generate_share` 返回可直接复制发布的内容包。
   - 用户可经历“记忆结果卡片 → 分享参数确认 → 分享内容包预览”的连续交互链路。
+  - Web Chat Runtime 在存在 `trip_id` 时必须直连 Core `shareService.generateShare(...)`，而不是仅返回本地拼接文案。
+  - 当 `memory_artifact_id` 已存在时，`generate_share` 必须显式把该 artifact 作为分享生成的输入上下文之一，并在结果 metadata 或文案中可追溯。
 
 ### D4.3 Web：动态 GUI 角色化响应开发
 
