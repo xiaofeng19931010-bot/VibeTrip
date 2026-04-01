@@ -2,6 +2,8 @@
 
 本清单基于 [trip.md](file:///Users/liam/trip/trip.md) 的方案，按照**“一人公司（Solo Founder）”**原则重构。目标是：**保持功能需求完全不变，但将运维成本、技术栈复杂度、部署心智负担降到最低。**
 
+协议参考见：[a2ui-protocol.md](file:///Users/liam/trip/a2ui-protocol.md)
+
 ## 技术约束（一人公司极简落地）
 
 - **语言收敛（全栈 TypeScript）**：废弃 Ruby/Sorbet。所有组件（Core、MCP Server、CLI、Web）统一使用 TypeScript（Node.js/Edge）。一份代码，一种生态，一人维护。
@@ -16,7 +18,7 @@
 - `packages/core/`：核心业务逻辑、Supabase 客户端封装、AI 编排（单人维护的单一真源）。
 - `apps/mcp-server/`：TypeScript MCP Server（SSE/HTTP 部署在 Vercel/Edge，stdio 供本地使用）。
 - `apps/cli/`：TypeScript CLI（引用 `core` 或调用远端 MCP）。
-- `apps/web/`：TypeScript Web（基于 Next.js 与 Vercel AI SDK 的 Generative UI 对话式基座，无传统固化表单）。
+- `apps/web/`：TypeScript Web Renderer（基于 Next.js 与 Vercel AI SDK 的 A2UI 渲染宿主，无传统业务页面）。
 
 ---
 
@@ -35,9 +37,11 @@
 |8.5|D1.5|Core|偏好学习引擎：用户纠偏行为记录与画像更新|记录手动修改并持久化偏好|
 |9|D2.1|MCP|实现 MCP Server 框架（stdio + SSE/HTTP）|可被 Cursor/Claude 挂载|
 |10|D2.0|Security|最小安全骨架（鉴权/限流/错误码）|可安全联调、可控成本|
+|10.5|D2.1.5|Protocol|定义 A2UI 协议与交互回传合同|JSON schema、action payload、tool result 规范|
 |11|D2.2|MCP|实现最小 8 个 MCP Tools（直调 Core）|工具可用、复用 core|
 |12|D2.3|CLI|实现 CLI 命令（复用 MCP）|`vibetrip plan/capture/memory/share`|
-|12.2|D2.4|Web|实现 Agent 原生动态 GUI (Generative UI)|流式渲染工具结果，无固定表单|
+|12.2|D2.4|Web|实现 A2UI Renderer（Shadcn + Tailwind）|JSON 解析、动态组件渲染|
+|12.3|D2.4.1|Web|实现 Interaction Runtime（交互回传闭环）|用户操作回传 LLM 并驱动下一轮渲染|
 |12.5|D2.5|Web/MCP|氛围感适配器：目的地/角色关联主题色与BGM|UI 主题配置与音乐推荐接口|
 |13|D3.1|Capture|自动记录：采集策略与数据来源（MVP）|start/stop/status + 策略配置|
 |14|D3.2|Capture|媒体采集：照片/语音/笔记 ingest 流程|素材入库、引用可追溯|
@@ -89,7 +93,7 @@
     - **BaaS 依赖**：全盘使用 Supabase (DB/Auth/Storage)。
     - **异步与队列**：采用 Serverless 方案（如 Inngest/Trigger.dev），不维护 Redis。
     - **BYOK (Bring Your Own Key) 策略**：明确外部 LLM 秘钥的流转边界，仅允许在请求生命周期内驻留内存，或通过端到端加密/KMS 存储，保障开发者安全接入自由的 LLM。
-    - **动态 GUI (Generative UI) 优先**：放弃所有传统的 CRUD 固化表单，Web 端只提供对话入口，基于 LLM 的 Tool Calls (MCP) 结果流式动态渲染组件。
+    - **A2UI 渲染器架构优先**：放弃所有传统的 CRUD 固化表单，采用“LLM 输出 A2UI JSON → Web 端 Shadcn + Tailwind 解析渲染”的模式，实现极简、高复用、易拓展的动态 GUI 闭环。
 - 完成标准
   - 架构决策文档明确并指导后续开发，消除运维与安全焦虑。
 
@@ -166,6 +170,17 @@
   - 未授权调用被拒绝；限流命中可观察。
   - 任一 MCP Tool 调用在审计表中可追溯到一次完整链路。
 
+### D2.1.5 Protocol：定义 A2UI 协议与交互回传合同
+
+- 任务内容
+  - 定义统一的 A2UI JSON schema，至少包含：`version`, `trace_id`, `interaction_id`, `view`, `actions`, `tool_call`, `tool_result`, `client_state`, `server_state`。
+  - 定义 `actions` 的 payload 结构，明确按钮点击、单选、多选、文件上传、确认/取消等事件的格式。
+  - 定义 `tool_result` 的回传约定，明确什么交互必须回传给 LLM，什么只保留在本地状态。
+  - 定义幂等与恢复机制：同一 `interaction_id` 重复提交如何去重，中断后如何恢复上一次渲染状态。
+- 完成标准
+  - 存在一份可供 Web Renderer、CLI 和 MCP 共用的 A2UI schema 定义。
+  - 任一交互卡片都能通过统一协议完成“渲染 → 操作 → 回传 → 再渲染”闭环。
+
 ### D2.2 MCP：实现最小 8 个 MCP Tools（直调 Core）
 
 - 工具清单（MVP）
@@ -193,14 +208,38 @@
   - CLI 默认走 stdio MCP（本地），可切换远程 MCP 地址。
   - CLI 支持直接通过 `--api-key` 和 `--model` 传入用户自定义 LLM 凭证。
 
-### D2.4 Web：实现 Agent 原生动态 GUI (Generative UI)
+### D2.4 Web：实现 A2UI Renderer（Shadcn + Tailwind）
 
 - 任务内容
-  - **摒弃传统路由与固定表单**：基于 Next.js 与 Vercel AI SDK 实现对话式主入口。
-  - 实现基于工具调用结果的流式渲染（Generative UI）：当 LLM 调用 `plan_trip` 或 `revise_itinerary` 时，前端根据返回的 JSON 数据流动态生成并渲染行程卡片、澄清选项或地图组件。
-  - 支持“一句话规划”的自然语言输入，并优雅降级处理澄清问题（Clarifying Questions）。
+  - **摒弃传统路由与固定表单**：基于 Next.js + Vercel AI SDK 实现对话主入口。
+  - **集成 Shadcn UI + Tailwind CSS**：搭建极简的原子组件库（按钮、卡片、选择器、上传器、消息块），作为 A2UI 的底层物料库。
+  - **实现 A2UI JSON 解析渲染流**：根据统一 schema 将 `view` 和 `actions` 解析成动态组件树。
+  - **实现 Renderer Registry**：至少支持 `stack/grid/message/card/choice-card/button-group/input/select/upload/itinerary-card/status/error` 的注册式渲染。
+  - **明确无传统业务页面**：Web 端只允许存在对话入口、认证、设置、上传、错误页和调试页，不允许出现独立的行程创建表单页或固定 CRUD 页面。
+  - **支持上传型动作链路**：当 `uploadField` 出现在 action payload 中时，Renderer 需先完成文件上传，再把资产元数据写入 `tool_result.uploadedAssets`。
 - 完成标准
-  - 界面没有固定的配置表单，用户通过对话和点击动态生成的卡片选项（如选择目的地、确认预算）来推进流程。
+  - 前端只需维护一套解析器（Renderer）和原子组件。
+  - 界面没有固化的业务配置表单，任一业务步骤都由 A2UI JSON 驱动渲染。
+  - 建议代码落点拆为 `Renderer`、`Registry`、`Envelope Builders` 三层，避免 `page.tsx` 与 `route.ts` 变成大杂烩。
+
+### D2.4.1 Web：实现 Interaction Runtime（交互回传闭环）
+
+- 任务内容
+  - 为所有动态组件接入统一的事件分发层，将点击、选择、上传、确认等动作转换为标准 `action payload`。
+  - 使用 `addToolResult` 或等效机制，将用户交互结果回传给 LLM / Agent Runtime，触发下一轮推理与 UI 更新。
+  - 维护最小本地状态机，区分“仅本地状态变更”和“必须回传给 LLM 的交互”。
+  - 处理重复点击、网络重试、回传失败、中断恢复等异常路径。
+- 完成标准
+  - 用户操作后可触发新一轮 LLM 请求，界面无缝更新。
+  - 同一交互不会因重复点击导致重复执行，异常路径可恢复。
+  - `target=local` 与 `target=llm` 的动作在运行时有明确分流，不混淆。
+
+> 当前最小原型实现位置：
+> - [a2ui-renderer.tsx](file:///Users/liam/trip/apps/web/src/components/a2ui-renderer.tsx)
+> - [a2ui-registry.tsx](file:///Users/liam/trip/apps/web/src/components/a2ui-registry.tsx)
+> - [a2ui-builders.ts](file:///Users/liam/trip/apps/web/src/lib/a2ui-builders.ts)
+> - [route.ts](file:///Users/liam/trip/apps/web/src/app/api/chat/route.ts)
+> - [upload route](file:///Users/liam/trip/apps/web/src/app/api/upload/route.ts)
 
 ### D2.5 Web/MCP：氛围感适配器
 
@@ -230,8 +269,10 @@
   - 照片：提取 EXIF 时间/地理位置（如有），建立与 Trip 的关联。
   - 语音：转写（可选）、时间戳与摘要。
   - 笔记：结构化存储（markdown/plain）。
+  - Web 端上传链路必须采用“受控上传接口 → `uploadedAssets` 回传 → 素材确认卡片”闭环，不允许上传完成后直接跳过确认阶段。
 - 完成标准
   - `ingest_media` 返回素材引用 ID，可用于记忆生成。
+  - 用户至少经历一次“上传素材 → 确认素材 → 继续生成”的完整 A2UI 交互闭环。
 
 ### D3.3 Capture：停留点识别算法
 
@@ -247,8 +288,11 @@
   - MVP 仅做图文：按天自动挑选“停留点+照片+一句话感受”。
   - 模板系统：按角色选择手账模板（亲子更活泼、情侣更浪漫、带父母更温和大字）。
   - 产物存储：使用 Supabase Storage（生成可下载 URL），并在 `artifacts` 表写入元数据。
+  - 生成前必须走一轮 A2UI 参数确认：至少包含模板选择（如 `handbook/poster/summary`），由用户确认后再进入生成。
+  - 生成完成后必须先返回“旅行记忆结果卡片”，显式展示模板、素材数、草稿标题与下一步分享入口，禁止直接静默进入分享流程。
 - 完成标准
   - `generate_memory` 输出可下载的文件路径/URL + 元数据。
+  - 用户可经历“确认素材 → 选择记忆模板 → 触发生成 → 查看记忆结果卡片”的连续交互链路。
 
 ### D4.2 Share：一键分享（小红书/朋友圈）
 
@@ -256,8 +300,10 @@
   - 渠道模板：标题、正文结构、标签、emoji 风格开关。
   - 文案生成：基于 itinerary+captures+memory 产物，生成 2-3 版备选。
   - 素材打包：长图+封面+文案 JSON。
+  - 分享前必须走一轮 A2UI 参数确认：至少包含渠道（如 `xhs/moments`）与文案调性（如 `healing/story/playful`）。
 - 完成标准
   - `generate_share` 返回可直接复制发布的内容包。
+  - 用户可经历“记忆结果卡片 → 分享参数确认 → 分享内容包预览”的连续交互链路。
 
 ### D4.3 Web：动态 GUI 角色化响应开发
 

@@ -2,12 +2,15 @@
 
 本 Harness 基于“一人公司”原则与 Agent 原生架构（CLI/MCP）设定，旨在为 VibeTrip 项目建立不可逾越的**多维开发纪律**。在引入 AI 辅助编程（如 Cursor / Trae / GPT-4o）时，必须将此 Harness 作为全局 System Prompt 或 `.cursorrules` 的核心内容，确保 AI 生成的代码不偏离架构底线。
 
+协议参考见：[a2ui-protocol.md](file:///Users/liam/trip/a2ui-protocol.md)
+
 ---
 
 ## 1. 架构与依赖底线 (Architecture & Dependencies)
 
 - **语言单一化**：绝对禁止引入 TypeScript / Node.js 之外的后端语言（如 Python、Ruby、Go）。所有代码必须是 TypeScript。
-- **动态 GUI (Generative UI) 优先**：项目为面向 Agent 的原生项目，**绝对禁止编写传统的固定路由页面或 CRUD 表单（如填写目的地、选择日期的固定表单页面）**。Web 端必须作为薄壳，基于用户的自然语言交互以及 MCP Tool 返回的结果（流式 JSON），使用 Vercel AI SDK 动态构建/渲染交互组件。
+- **A2UI 渲染器 (Shadcn + Tailwind) 优先**：项目为面向 Agent 的原生项目，**绝对禁止编写传统的固定路由页面或 CRUD 表单**。Web 端必须作为薄壳，遵循 A2UI 设计规范：`用户操作 → LLM 返回 A2UI 标准 JSON → Shadcn/Tailwind 动态解析渲染 → 用户操作`。所有组件（如行程卡片、按钮组）必须能响应 A2UI JSON 的指令并具备双向回传能力。
+- **强制支持工具回调双向交互 (Interactive Tool Results)**：渲染的组件必须不仅仅是“只读卡片”。在行程规划、澄清问题等场景中，动态生成的组件内部必须有交互元素（按钮/选择器）。用户的点击行为必须通过 `addToolResult` (或对应的 Vercel AI SDK 方法) 实时传递给 LLM 作为执行结果，从而触发下一轮的智能编排。
 - **BaaS 优先**：禁止在本地或云端手写 `docker-compose.yml` 部署数据库、Redis、MQ 等基础设施。
   - **数据库/鉴权/存储**：只能使用 Supabase API，禁止直连原生 Postgres 协议绕过 RLS（Row Level Security）。
   - **异步队列**：只能使用 Inngest 或 Trigger.dev，禁止引入 BullMQ、Celery 等需要 Redis 的传统队列。
@@ -26,6 +29,9 @@
   - TypeScript 的 `type` 或 `interface` 必须通过 `zod.infer<typeof schema>` 自动推导，禁止双写。
 - **数据库类型自动同步**：
   - 数据库表结构变更后，必须执行 `supabase gen types typescript` 覆盖本地文件，禁止手动修改 `database.types.ts`。
+- **A2UI 协议单一真源**：
+  - A2UI JSON 协议必须以 Zod schema 形式定义在 `packages/core/schemas` 中，至少包含：`version`, `trace_id`, `interaction_id`, `view`, `actions`, `tool_call`, `tool_result`, `client_state`, `server_state`。
+  - Web Renderer、CLI 和 MCP 在消费或输出交互结构时，必须共用同一份协议定义，禁止各自维护私有 JSON 格式。
 
 ## 3. 错误处理与日志纪律 (Error Handling & Observability)
 
@@ -53,6 +59,30 @@
   - 对于 LLM 输出这种非确定性结果，必须录制一套标准的“Golden Data”（如针对不同角色的标准行程输出结构），在 CI 中验证 schema 解析和降级路径是否永远不会崩溃。
 - **本地零配置启动**：
   - 新人（或换电脑后的你）拉下代码后，执行 `pnpm install && pnpm dev` 必须能直接跑起全套服务（结合 Supabase local），禁止需要复杂的手动环境变量配置。
+- **A2UI 闭环验收**：
+  - 任一动态卡片都必须通过验收链路：`LLM 返回 A2UI JSON → Renderer 渲染 → 用户点击/选择 → addToolResult 回传 → LLM 返回下一轮 A2UI JSON`。
+  - 只读卡片不算完成；没有交互回传能力的组件不得进入主流程。
+
+## 6. 动态 UI 生成约束 (Dynamic UI Generation Rules)
+
+- **目标**：本节只保留 A2UI 动态界面生成的硬约束，不承载具体视觉主题实现细节。
+- **允许的固定界面范围**：仅允许认证页、设置页、文件上传页、错误页和调试页使用固定 UI；业务流程页必须由 A2UI JSON 动态驱动。
+- **Renderer 边界**：
+  - Web 端只负责解析 `view/actions` 并渲染原子组件，不得在前端硬编码业务流程。
+  - 渲染器允许维护少量原子组件：按钮、卡片、选择器、上传器、消息块、进度块。
+- **交互 Runtime 边界**：
+  - 所有按钮点击、单选、多选、上传、确认/取消，都必须转换为标准 `action payload`。
+  - 只有纯视觉状态可留在本地；涉及业务推进的交互必须通过 `addToolResult` 或等效机制回传给 LLM。
+  - `target=local` 与 `target=llm` 必须严格区分：本地动作不得误触发推理，请求级动作不得只停留在前端状态。
+  - 上传型动作必须先通过受控上传接口完成文件落存，再将 `bucket/path/publicUrl` 等资产元数据回填到 `tool_result.uploadedAssets`，禁止把原始 File 对象直接塞进协议回传。
+  - 推荐实现拆层：`Renderer`（渲染）、`Registry`（节点映射）、`Envelope Builders`（服务端界面生成）、`Interaction Runtime`（回传闭环），禁止把所有逻辑塞进单个页面文件。
+- **协议健壮性**：
+  - 所有 A2UI JSON 在渲染前必须先经过 schema 校验。
+  - 对 LLM 返回的 Markdown 包裹 JSON、空白字符、字段缺失要有容错预处理。
+  - 上传类场景必须形成二段式界面：先上传，再返回素材确认界面；禁止“上传即默认确认”。
+  - 生成类场景必须形成参数确认界面：例如旅行记忆生成前必须让用户确认模板/风格，禁止素材确认后直接开始后台生成。
+  - 结果类场景必须形成显式结果卡片：例如 `generate_memory` 完成后必须先返回记忆结果卡片，再进入分享参数确认；禁止后台生成后直接跳转到下一业务阶段。
+  - 分享类场景必须形成前置确认界面：例如 `generate_share` 前必须让用户确认渠道与文案调性，禁止直接按默认平台静默生成。
 
 ## 7. 实战错误总结与避坑指南 (Lessons Learned)
 
@@ -82,200 +112,12 @@
    - **错误场景**：在 pnpm workspace monorepo 中，为了部署 `apps/web` (Next.js 14 App Router) 而在根目录添加 `vercel.json` 使用 `builds` 配置，导致部署成功但访问报 404 `NOT_FOUND`，且提示 `Due to builds existing in your configuration file, the Build and Development Settings defined in your Project Settings will not apply`。
    - **约束**：对于 Next.js 14+ 的 Monorepo 项目，**绝对禁止**在项目根目录使用包含 `builds` 字段的 `vercel.json` 进行传统部署。必须直接在 Vercel 控制台（或通过 API/CLI）将项目的 **Root Directory** 设置为子应用目录（如 `apps/web`），由 Vercel 自动推断并执行 Monorepo 根目录的依赖安装与子目录构建。
 
-## 6. 动态 UI 生成约束 (Dynamic UI Generation Rules)
-
-*注：本节为 VibeTrip 的 Generative UI 提供了具体的设计系统约束，必须严格遵循*
-
-### 6.1 设计系统层级 (Design System Hierarchy)
-
-每个角色（Role）必须拥有完整的设计系统配置，包含以下层级：
-
-```typescript
-interface VibeConfig {
-  role: string;
-  theme: {
-    primaryColor: string;      // 主色调 (HEX)
-    secondaryColor: string;    // 辅助色 (HEX)
-    backgroundColor: string;    // 背景色 (HEX)
-    textColor: string;         // 文字色 (HEX)
-    accentColor: string;       // 强调色 (HEX)
-    cardBg: string;            // 卡片背景 (支持 rgba 半透明)
-    gradientStart: string;    // 渐变起点色 (HEX)
-    gradientEnd: string;       // 渐变终点色 (HEX)
-    fontDisplay: string;       // 展示字体（标题用）
-    fontBody: string;          // 正文字体
-    borderRadius: string;       // Tailwind 圆角类名 (如 'rounded-2xl')
-    shadow: string;           // Tailwind 阴影类名 (如 'shadow-sm')
-    shadowHover: string;       // Tailwind 悬停阴影 (如 'hover:shadow-lg')
-    fontSize: 'sm' | 'base' | 'lg' | 'xl';  // Tailwind 字号
-    animationDuration: string; // Tailwind 动画时长 (如 'duration-300')
-  };
-  stickers: string[];           // 角色贴纸列表 (6-8个 emoji)
-  stamps: string[];            // 角色印章列表 (3个)
-  decoration: {
-    pattern: 'dots' | 'lines' | 'waves' | 'grid' | 'none';
-    patternColor: string;      // 图案颜色 (HEX)
-    patternOpacity: number;    // 图案透明度 (0-1)
-    badge: string;            // 徽章文字
-  };
-  typography: {
-    displaySize: string;      // Tailwind 展示字号 (如 'text-3xl')
-    headingSize: string;       // Tailwind 标题字号 (如 'text-xl')
-    bodySize: string;          // Tailwind 正文字号 (如 'text-base')
-    captionSize: string;       // Tailwind  caption 字号 (如 'text-sm')
-    lineHeight: string;        // Tailwind 行高 (如 'leading-relaxed')
-  };
-  spacing: {
-    cardPadding: string;       // Tailwind 内边距 (如 'p-6')
-    sectionGap: string;        // Tailwind 段落间距 (如 'gap-6')
-    itemGap: string;           // Tailwind 元素间距 (如 'gap-3')
-  };
-  effects: {
-    glassmorphism: boolean;    // 是否启用玻璃拟态
-    backdropBlur: string;      // Tailwind 模糊类名 (如 'backdrop-blur-md')
-    borderStyle: string;       // 边框样式 (solid/dashed/dotted)
-    borderWidth: string;       // Tailwind 边框宽度 (如 'border')
-    highlightColor: string;    // 高亮背景色 Tailwind 类名
-  };
-}
-```
-
-### 6.2 Tailwind CSS 现代简约扁平风格约束
-
-**设计原则**：现代简约扁平风 (Modern Flat Design)
-
-1. **色彩系统**：
-   - 主色调使用饱和度适中的柔和色系
-   - 渐变背景使用 `bg-gradient-to-br` + 角色主色/辅助色
-   - 玻璃拟态：`bg-white/80 backdrop-blur-{md|lg} border border-white/20`
-   - 文字颜色层级：主色 → 辅助色 → 灰色
-
-2. **圆角系统**：
-   - 卡片：`rounded-2xl` 或 `rounded-3xl`
-   - 按钮：`rounded-xl` 或 `rounded-full`
-   - 小元素：`rounded-lg`
-   - 胶囊：`rounded-full`
-
-3. **阴影系统**：
-   - 轻微阴影：`shadow-sm`（默认状态）
-   - 中等阴影：`shadow-md`（卡片）
-   - 悬停阴影：`shadow-lg` 或 `shadow-xl`
-   - 扁平按钮：无阴影
-
-4. **间距系统**：
-   - 卡片内边距：`p-4` ~ `p-6`
-   - 元素间距：`gap-2` ~ `gap-4`
-   - 区块间距：`gap-4` ~ `gap-6`
-
-5. **动效约束**：
-   - 过渡时长：`duration-150` ~ `duration-300`
-   - 悬停效果：`hover:-translate-y-0.5` + `hover:shadow-lg`
-   - 脉冲动画：`animate-pulse`
-   - 浮动动画：`animate-vibe-float`
-
-6. **字体层级**：
-   - 展示标题：`text-2xl` ~ `text-3xl font-bold`
-   - 副标题：`text-lg` ~ `text-xl font-semibold`
-   - 正文：`text-sm` ~ `text-base`
-   - 辅助文字：`text-xs` ~ `text-sm text-slate-500`
-
-7. **布局约束**：
-   - 最大宽度：`max-w-4xl` 或 `max-w-2xl`
-   - 响应式：`grid-cols-1 sm:grid-cols-2`
-   - 弹性布局：`flex flex-col gap-{n}`
-
-### 6.3 组件渲染规则
-
-1. **禁止硬编码样式**：所有样式必须从 `VibeConfig` 动态读取。
-
-2. **动态类名组合**：使用 `generateVibeClasses(role)` 辅助函数生成标准类名。
-
-3. **Tailwind 与内联样式混用**：
-   - 结构性样式（布局、间距）：使用 Tailwind 类名
-   - 动态颜色/字体：使用内联 `style={{}}`
-
-4. **图案装饰**：
-   - `vibe-pattern-dots`：圆点图案（`radial-gradient`）
-   - `vibe-pattern-lines`：对角线条纹
-   - `vibe-pattern-waves`：波浪条纹
-   - `vibe-pattern-grid`：网格图案
-  };
-  spacing: {
-    cardPadding: string;
-    sectionGap: string;
-    itemGap: string;
-  };
-  effects: {
-    glassmorphism: boolean;
-    backdropBlur: string;
-    borderStyle: 'solid' | 'dashed' | 'dotted';
-    borderWidth: string;
-    highlightColor: string;
-  };
-}
-```
-
-### 6.2 角色设计风格约束 (Role Design Style Constraints)
-
-| 角色 | 设计风格 | 字体 | 圆角 | 特效 | 图案 |
-|------|---------|------|------|------|------|
-| parents (带父母) | 优雅养生 | Noto Serif SC | 20px | Glassmorphism | waves |
-| family (亲子) | 活泼欢乐 | ZCOOL KuaiLe | 24px | 无 | dots |
-| couple (情侣) | 浪漫温馨 | Ma Shan Zheng | 28px | Glassmorphism | waves |
-| friends (闺蜜/特种兵) | 活力四射 | Bangers | 16px | Glassmorphism | lines |
-| soldier (特种兵) | 极简高效 | JetBrains Mono | 8px | 无 | grid |
-
-### 6.3 组件渲染约束 (Component Rendering Rules)
-
-1. **禁止硬编码样式**：所有组件样式必须从 `VibeConfig` 动态读取，禁止在组件内写死颜色/字体/间距值。
-
-2. **动态样式注入**：通过 `generateCSSVariables(role)` 和 `generateDynamicStyles(role)` 动态生成 CSS 变量和样式规则。
-
-3. **Sticker 随机性**：每个角色配置 6-8 个 stickers，每次渲染时随机选择一个（使用 `getRandomSticker(role)`）。
-
-4. **Stamp 多样性**：每个角色配置 3 个 stamps，通过 `getRandomStamp(role)` 随机选择。
-
-5. **动画与过渡**：
-   - 每个角色必须有 `animationDuration` 配置
-   - 卡片必须有 hover 效果（`transform: translateY(-2px)` + `shadowHover`）
-   - 加载指示器使用脉冲动画（`vibe-pulse`）
-
-### 6.4 装饰元素约束 (Decoration Element Rules)
-
-1. **Pattern 图案**：
-   - `dots`: 圆点图案（`radial-gradient`）
-   - `lines`: 对角线图案（`repeating-linear-gradient 45deg`）
-   - `waves`: 波浪图案（`repeating-linear-gradient -45deg`）
-   - `grid`: 网格图案（`linear-gradient` 双向）
-   - `none`: 无图案
-
-2. **印章 (Stamp)**：绝对定位在卡片右上角，`rotate(12deg)` 旋转，带阴影。
-
-3. **徽章 (Badge)**：渐变背景，白色文字，圆角胶囊形状。
-
-### 6.5 CSS 变量命名规范 (CSS Variable Naming Convention)
-
-所有动态 CSS 变量必须以 `--vibe-` 前缀开头：
-
-```
---vibe-primary, --vibe-secondary, --vibe-bg, --vibe-text, --vibe-accent,
---vibe-card-bg, --vibe-gradient, --vibe-font-display, --vibe-font-body,
---vibe-radius, --vibe-shadow, --vibe-shadow-hover, --vibe-animation,
---vibe-blur, --vibe-pattern, --vibe-pattern-color, --vibe-pattern-opacity,
---vibe-stamp, --vibe-badge, --vibe-display-size, --vibe-heading-size,
---vibe-body-size, --vibe-caption-size, --vibe-line-height, --vibe-letter-spacing,
---vibe-card-padding, --vibe-section-gap, --vibe-item-gap, --vibe-glass,
---vibe-backdrop-blur, --vibe-border-style, --vibe-border-width, --vibe-highlight
-```
-
----
-
-## 7. AI 辅助编程法则 (AI Coding Rules)
+## 8. AI 辅助编程法则 (AI Coding Rules)
 
 *注：将此段落喂给 Cursor/Trae 等 AI 助手*
 
 1. **先看 Schema，再写逻辑**：实现任何功能前，先去 `packages/core/schemas` 查找或定义 Zod schema，再开始写实现代码。
-2. **避免传统 UI 思维**：在前端开发中，**禁止创建固定的表单组件**。所有业务卡片（如：行程预览、选项确认）必须作为 Generative UI 的 `toolInvocation` 渲染产物。
+2. **避免传统 UI 思维**：在前端开发中，**禁止创建固定的表单组件**。所有业务卡片（如：行程预览、选项确认）必须作为 Generative UI 的 `toolInvocation` 渲染产物，且**必须包含双向交互能力**（通过 `addToolResult` 返回用户操作结果给 LLM），绝不仅仅是只读视图。
 3. **避免过度抽象**：不需要写复杂的面向对象继承（如 Abstract Base Class），多用纯函数（Pure Functions）和组合模式，保持代码极简。
 4. **保持状态机清晰**：在修改 Trip 或 Itinerary 状态时，不要散落式地 update，必须调用 `packages/core` 中统一的状态流转函数（State Machine）。
 5. **拒绝“假设性修复”**：如果发现类型不匹配或逻辑缺失，**停下来询问或直接去修复根源**，不要在当前文件里写临时补丁（Workaround）。

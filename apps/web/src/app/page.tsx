@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Message, ClarifyingQuestion } from '../components/types';
-import { TripCard, ClarifyingQuestionsCard, RoleSelectionCard, StreamingIndicator } from '../components/trip-components';
+import { A2UIEnvelope, A2UIToolResult, Message } from '../components/types';
+import { A2UIRenderer, A2UIStreamingCard } from '../components/a2ui-renderer';
+import { RoleSelectionCard } from '../components/trip-components';
 import { getVibeConfig } from '../components/vibe-config';
 
 export default function HomePage() {
@@ -11,7 +12,6 @@ export default function HomePage() {
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [showRoleSelection, setShowRoleSelection] = useState(true);
-  const [clarifyingQuestions, setClarifyingQuestions] = useState<ClarifyingQuestion[] | null>(null);
 
   const handleRoleSelect = useCallback((role: string) => {
     setSelectedRole(role);
@@ -23,83 +23,112 @@ export default function HomePage() {
     }]);
   }, []);
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || !selectedRole) return;
-
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: input,
-    };
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setIsStreaming(true);
-
+  const startStreaming = useCallback(() => {
     setMessages(prev => [...prev, {
       id: crypto.randomUUID(),
       role: 'assistant',
       content: '',
       isStreaming: true,
     }]);
+  }, []);
+
+  const finishStreamingWithEnvelope = useCallback((envelope: A2UIEnvelope) => {
+    setMessages(prev => {
+      const lastMsg = prev[prev.length - 1];
+      if (lastMsg?.isStreaming) {
+        return [...prev.slice(0, -1), {
+          ...lastMsg,
+          content: '',
+          ui: envelope,
+          isStreaming: false,
+        }];
+      }
+      return [...prev, {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: '',
+        ui: envelope,
+      }];
+    });
+  }, []);
+
+  const finishStreamingWithError = useCallback((content: string) => {
+    setMessages(prev => {
+      const lastMsg = prev[prev.length - 1];
+      if (lastMsg?.isStreaming) {
+        return [...prev.slice(0, -1), {
+          ...lastMsg,
+          content,
+          isStreaming: false,
+        }];
+      }
+      return prev;
+    });
+  }, []);
+
+  const sendRound = useCallback(async (payload: Record<string, unknown>) => {
+    setIsStreaming(true);
+    startStreaming();
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: input,
-          role: selectedRole,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
-
       setIsStreaming(false);
-      setClarifyingQuestions(data.questions || null);
 
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg?.isStreaming) {
-          return [...prev.slice(0, -1), {
-            ...lastMsg,
-            content: data.content || '行程已生成！',
-            isStreaming: false,
-            plan: data.plan,
-          }];
-        }
-        return prev;
-      });
+      if (data?.envelope) {
+        finishStreamingWithEnvelope(data.envelope as A2UIEnvelope);
+        return;
+      }
+
+      finishStreamingWithError('抱歉，服务返回了无效的界面协议。');
     } catch {
       setIsStreaming(false);
-      setMessages(prev => {
-        const lastMsg = prev[prev.length - 1];
-        if (lastMsg?.isStreaming) {
-          return [...prev.slice(0, -1), {
-            ...lastMsg,
-            content: '抱歉，服务暂时不可用，请稍后重试～',
-            isStreaming: false,
-          }];
-        }
-        return prev;
-      });
+      finishStreamingWithError('抱歉，服务暂时不可用，请稍后重试～');
     }
-  }, [input, selectedRole]);
+  }, [finishStreamingWithEnvelope, finishStreamingWithError, startStreaming]);
 
-  const handleAnswer = useCallback((field: string, value: string) => {
-    setInput(prev => `${prev} ${field}: ${value}`);
-    setClarifyingQuestions(null);
-  }, []);
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || !selectedRole) return;
 
-  const handleConfirmPlan = useCallback(() => {
+    const currentInput = input;
     setMessages(prev => [...prev, {
       id: crypto.randomUUID(),
-      role: 'assistant',
-      content: '✅ 行程已确认！祝你们旅途愉快～ 🌟',
+      role: 'user',
+      content: currentInput,
     }]);
-    setShowRoleSelection(true);
-    setSelectedRole(null);
-  }, []);
+    setInput('');
+
+    await sendRound({
+      message: currentInput,
+      role: selectedRole,
+    });
+  }, [input, selectedRole, sendRound]);
+
+  const handleToolResult = useCallback(async (toolResult: A2UIToolResult, envelope: A2UIEnvelope) => {
+    if (!selectedRole) return;
+
+    const summary = typeof toolResult.payload.intent === 'string'
+      ? `已选择：${String(toolResult.payload.intent)}`
+      : `已触发交互：${toolResult.action_id}`;
+
+    setMessages(prev => [...prev, {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: summary,
+    }]);
+
+    await sendRound({
+      role: selectedRole,
+      toolResult,
+      serverState: envelope.server_state,
+    });
+  }, [selectedRole, sendRound]);
 
   const vibe = selectedRole ? getVibeConfig(selectedRole) : null;
 
@@ -127,7 +156,7 @@ export default function HomePage() {
         {messages.map((msg) => (
           <div key={msg.id} className={`message message-${msg.role}`}>
             {msg.role === 'assistant' && msg.isStreaming && (
-              <StreamingIndicator role={selectedRole || 'friends'} />
+              <A2UIStreamingCard role={selectedRole || 'friends'} />
             )}
 
             {msg.content && (
@@ -136,23 +165,15 @@ export default function HomePage() {
               </div>
             )}
 
-            {msg.role === 'assistant' && msg.plan && (
-              <TripCard
-                plan={msg.plan}
-                onConfirm={handleConfirmPlan}
-                onModify={(field, value) => setInput(`${field}: ${value}`)}
+            {msg.role === 'assistant' && msg.ui && selectedRole && (
+              <A2UIRenderer
+                envelope={msg.ui}
+                role={selectedRole}
+                onAction={(toolResult) => handleToolResult(toolResult, msg.ui!)}
               />
             )}
           </div>
         ))}
-
-        {clarifyingQuestions && clarifyingQuestions.length > 0 && (
-          <ClarifyingQuestionsCard
-            questions={clarifyingQuestions}
-            onAnswer={handleAnswer}
-            role={selectedRole || 'friends'}
-          />
-        )}
       </div>
 
       {!showRoleSelection && (

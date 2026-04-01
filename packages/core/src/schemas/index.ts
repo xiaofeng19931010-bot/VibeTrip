@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export * from './a2ui.js';
+
 export const RoleType = z.enum(['parents', 'family', 'couple', 'friends', 'soldier']);
 export type RoleType = z.infer<typeof RoleType>;
 
